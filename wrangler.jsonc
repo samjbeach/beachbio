@@ -1,0 +1,14 @@
+{
+  // Cloudflare Workers Static Assets — no Worker script required.
+  // Docs: https://developers.cloudflare.com/workers/static-assets/
+  "name": "beachbio",
+  "compatibility_date": "2026-06-28",
+
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+    // "single-page-application" returns index.html for any unmatched path with
+    // a 200, which is the most permissive option. Switch to "404-page" if you
+    // later add a custom public/404.html and want true 404 responses.
+  }
+}
