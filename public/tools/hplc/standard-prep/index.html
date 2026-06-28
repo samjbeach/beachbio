@@ -16,6 +16,7 @@
   fieldset input[type=number], fieldset select { width: 90px; flex: none; padding: 3px 6px; }
   fieldset .derived { margin-top: 6px; }
   table { margin-top: 18px; }
+  tfoot tr.total th, tfoot tr.total td { border-top: 2px solid var(--line); font-weight: 600; }
   /* µ uppercases to Greek Μ (looks like M); keep units verbatim */
   th .u { text-transform: none; }
   /* compact two-up columns inside a single fieldset */
@@ -64,6 +65,7 @@
       <tr><th>Std</th><th>Target (<span class="u">µg/mL</span>)</th><th>Astaxanthin (<span class="u">µL</span>)</th><th>apo-carotenal (<span class="u">µL</span>)</th><th>MeOH (<span class="u">µL</span>)</th></tr>
     </thead>
     <tbody></tbody>
+    <tfoot></tfoot>
   </table>
   <div id="flags"></div>
   <div class="rowbtns"><button class="primary" id="copyBtn">Copy table (TSV)</button></div>
@@ -134,10 +136,17 @@
     const flags=[];
     if(isFinite(vIS) && vIS>0 && vIS<vmin) flags.push(`IS: ${sf(vIS)} µL per vial is below the ${vmin} µL pipette threshold — use a more dilute IS stock or a larger batch`);
 
+    const TOTAL_MAX = 900;  // µL — flag total astaxanthin / IS draw above this
+    let totAx=0, totIS=0, totMeOH=0;
+
     concs.forEach((c,i)=>{
       const vAx = axStock>0 ? c*vfinal/axStock*1000 : NaN;   // µL
       const vMeOH = vfinalUL - vAx - vIS;
       const tr=document.createElement('tr');
+
+      if(isFinite(vAx)) totAx += vAx;
+      if(isFinite(vIS)) totIS += vIS;
+      if(isFinite(vMeOH)) totMeOH += vMeOH;
 
       let problem=false, msgs=[];
       if(isFinite(vAx) && vAx>0 && vAx<vmin){ problem=true; msgs.push(`astaxanthin ${sf(vAx)} µL below pipette threshold`);}
@@ -150,6 +159,17 @@
       tr.innerHTML = `<td>${i+1}</td><td>${sf(c)}</td><td>${sf(vAx)}</td><td>${sf(vIS)}</td><td>${meOHcell}</td>`;
       tb.appendChild(tr);
     });
+
+    // totals row — quick reference for how much of each component to draw
+    const tf = $('out').querySelector('tfoot');
+    const axOver = isFinite(totAx) && totAx>TOTAL_MAX;
+    const isOver = isFinite(totIS) && totIS>TOTAL_MAX;
+    const totCell = (v,over) => over ? `<span class="warn">${sf(v)}</span>` : sf(v);
+    tf.innerHTML = concs.length
+      ? `<tr class="total"><th colspan="2">Total (µL)</th><td>${totCell(totAx,axOver)}</td><td>${totCell(totIS,isOver)}</td><td>${sf(totMeOH)}</td></tr>`
+      : '';
+    if(axOver) flags.push(`Total astaxanthin ${sf(totAx)} µL exceeds ${TOTAL_MAX} µL — split the batch or use a more concentrated stock`);
+    if(isOver) flags.push(`Total IS (apo-carotenal) ${sf(totIS)} µL exceeds ${TOTAL_MAX} µL — split the batch or use a more concentrated stock`);
 
     $('flags').innerHTML = flags.length
       ? '<div class="flagnote">⚠ '+flags.join('<br>⚠ ')+'</div>'
