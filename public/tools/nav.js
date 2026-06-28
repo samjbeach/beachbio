@@ -237,10 +237,15 @@
   }
 
   const stored = localStorage.getItem(COLLAPSED_KEY);
-  const isMobile = window.matchMedia("(max-width: 700px)").matches;
-  // Honour a saved preference; otherwise start hidden on mobile (so the drawer
-  // doesn't cover the tool) and open on desktop.
-  if (stored === "1" || (stored === null && isMobile)) {
+  // On narrow viewports (≤700px) the sidebar is an overlay drawer that covers
+  // the tool, so always start it hidden on load — regardless of any saved
+  // open/closed preference. Otherwise opening the drawer once would leave it
+  // open across every subsequent tool, blocking the content. The saved
+  // preference only governs wider screens, where the sidebar pushes content
+  // aside instead of covering it. (Tapping › still opens the drawer for the
+  // current page; it just won't persist across navigations.)
+  const isNarrow = window.matchMedia("(max-width: 700px)").matches;
+  if (isNarrow || stored === "1") {
     document.body.classList.add("nav-collapsed");
   }
 
