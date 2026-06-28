@@ -4,6 +4,12 @@
   "name": "beachbio",
   "compatibility_date": "2026-06-28",
 
+  // Keep the public *.workers.dev URLs disabled. Without these, every deploy
+  // re-enables them (Wrangler's default is "on"), exposing /tools/* unauthenticated.
+  // The site is reached only via the custom domain beachbio.io (behind Access).
+  "workers_dev": false,
+  "preview_urls": false,
+
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application"
