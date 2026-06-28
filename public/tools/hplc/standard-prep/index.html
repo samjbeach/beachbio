@@ -16,6 +16,8 @@
   fieldset input[type=number], fieldset select { width: 90px; flex: none; padding: 3px 6px; }
   fieldset .derived { margin-top: 6px; }
   table { margin-top: 18px; }
+  /* µ uppercases to Greek Μ (looks like M); keep units verbatim */
+  th .u { text-transform: none; }
   /* compact two-up columns inside a single fieldset */
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; }
   .cols .colhead { font-weight: 600; font-size: 12px; color: var(--text); margin: 2px 0 2px; }
@@ -59,7 +61,7 @@
 
   <table id="out">
     <thead>
-      <tr><th>Std</th><th>Target (µg/mL)</th><th>Astaxanthin (µL)</th><th>apo-carotenal (µL)</th><th>MeOH (µL)</th></tr>
+      <tr><th>Std</th><th>Target (<span class="u">µg/mL</span>)</th><th>Astaxanthin (<span class="u">µL</span>)</th><th>apo-carotenal (<span class="u">µL</span>)</th><th>MeOH (<span class="u">µL</span>)</th></tr>
     </thead>
     <tbody></tbody>
   </table>
