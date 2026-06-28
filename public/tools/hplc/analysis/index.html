@@ -31,7 +31,16 @@
 <div class="wrap">
   <p class="eyebrow">HPLC · quantification</p>
   <h1>HPLC analysis — astaxanthin via apo-carotenal IS</h1>
-  <p class="sub">Internal-standard calibration → optional matrix-spike correction → sample quantification with inverse-prediction 95% intervals.</p>
+  <p class="sub">Calibrate on the area <b>ratio</b> → matrix-spike diagnostic → astaxanthin recovered as an <b>amount (µg)</b>, blind to recovery and reconstitution volume, with inverse-prediction 95% intervals.</p>
+
+  <div class="note">
+    <b>Read once.</b> Three things decide whether the number is right:
+    <ol style="margin:6px 0 0;padding-left:18px">
+      <li><b>Spike the IS at the very start</b>, before any extraction — into samples <i>and</i> matrix spikes. That is the only reason recovery and final volume cancel.</li>
+      <li><b>Quantify on the ratio</b> (done for you). The AUC columns are inputs, not the answer — never read raw astaxanthin area off the curve.</li>
+      <li><b>Set the two anchors</b> below. The standards' IS is a <i>concentration</i>; the sample spike is an <i>absolute amount</i>. They are used on opposite sides of the maths and <b>need not match</b> — a mismatch washes out.</li>
+    </ol>
+  </div>
 
   <!-- STEP 1: SETUP -->
   <h2><span class="step">1</span>Calibration setup</h2>
@@ -52,6 +61,10 @@
       </label>
       <label>Matrix blank ratio R <span style="font-size:11px">(optional, subtracted)</span>
         <input type="number" id="blankR" placeholder="0" step="0.0001"></label>
+      <label>IS in standards <span style="font-size:11px">(µg/mL — constant IS level in the neat standards)</span>
+        <input type="number" id="isStd" value="1" step="0.01"></label>
+      <label>IS spiked per sample <span style="font-size:11px">(µg — absolute amount added before extraction)</span>
+        <input type="number" id="isSamp" value="1" step="0.01"></label>
     </div>
   </fieldset>
 
@@ -65,9 +78,9 @@
   <div class="summary" id="calSummary">Enter at least 3 standards with areas.</div>
 
   <!-- STEP 3: SPIKES -->
-  <h2><span class="step">3</span>Matrix-matched spikes <span style="font-weight:400;color:var(--muted);font-size:12px">(optional correction factor)</span></h2>
+  <h2><span class="step">3</span>Matrix-matched spikes <span style="font-weight:400;color:var(--muted);font-size:12px">(diagnostic — do astaxanthin &amp; IS co-recover? only correct if they don't)</span></h2>
   <table id="spikeTable">
-    <thead><tr><th>Spike</th><th>Nominal (<span class="u">µg/mL</span>)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Apparent (<span class="u">µg/mL</span>)</th><th>Recovery %</th><th>Factor F</th></tr></thead>
+    <thead><tr><th>Spike</th><th>Known (<span class="u">µg</span>)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Recovered (<span class="u">µg</span>)</th><th>Recovery %</th><th>Factor F</th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="rowbtns"><button id="spkAdd">+ spike</button><button id="spkDel">− spike</button></div>
@@ -76,8 +89,9 @@
 
   <!-- STEP 4: SAMPLES -->
   <h2><span class="step">4</span>Samples</h2>
+  <div class="sub" style="margin:0 0 8px">Recovered amount = (ratio ÷ slope) × IS spiked per sample. This is the astaxanthin in the original spiked aliquot — reconstitution volume never enters.</div>
   <table id="sampleTable">
-    <thead><tr><th>Sample</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Conc (<span class="u">µg/mL</span>)</th><th>95% CI</th><th></th></tr></thead>
+    <thead><tr><th>Sample</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Astaxanthin (<span class="u">µg</span>)</th><th>95% CI</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="rowbtns"><button id="smpAdd">+ sample</button><button id="smpDel">− sample</button><button class="primary" id="copyBtn">Copy results (TSV)</button></div>
@@ -173,6 +187,11 @@
   function recompute(){
     const mode=$('weighting').value;
     const blank=num($('blankR').value)||0;
+    // The two quantification anchors (doc §2): standards' IS concentration and the
+    // absolute IS spiked per sample. Recovered amount = predicted conc × (isSamp/isStd).
+    // They sit on opposite sides of the maths, so any mismatch cancels (doc §3).
+    const isStd=num($('isStd').value), isSamp=num($('isSamp').value);
+    const k=(isFinite(isStd)&&isStd>0&&isFinite(isSamp))?isSamp/isStd:NaN;
 
     // calibration
     const calRows=[...$('calTable').querySelectorAll('tbody tr')];
@@ -210,8 +229,8 @@
       const rC=tr.querySelector('.s-r'),aC=tr.querySelector('.s-app'),recC=tr.querySelector('.s-rec'),fC=tr.querySelector('.s-f');
       let R=NaN;
       if(isFinite(ax)&&isFinite(is)&&is!==0){R=ax/is-blank;rC.textContent=fmt(R,4);} else {rC.textContent='—';}
-      if(REG&&isFinite(R)&&isFinite(nom)&&nom>0&&REG.b1>0){
-        const app=predict(REG,R).x0;
+      if(REG&&isFinite(R)&&isFinite(nom)&&nom>0&&REG.b1>0&&isFinite(k)){
+        const app=predict(REG,R).x0*k;   // recovered amount (µg), same maths as samples
         const rec=app/nom*100, F=nom/app;
         aC.textContent=fmt(app,3); recC.textContent=fmt(rec,1); fC.textContent=fmt(F,3);
         if(isFinite(F)&&F>0) Fs.push(F);
@@ -253,9 +272,11 @@
       if(isFinite(ax)&&isFinite(is)&&is!==0){R=ax/is-blank;rC.textContent=fmt(R,4);} else {rC.textContent='—';cC.textContent='—';ciC.textContent='—';return;}
       if(!REG||REG.b1<=0){cC.textContent='—';ciC.textContent='—';return;}
       const p=predict(REG,R);
-      let C=p.x0, lo=p.lo, hi=p.hi;
+      if(!isFinite(k)){cC.textContent='—';ciC.textContent='—';fl.innerHTML='<span class="flag">set IS anchors</span>';samps.push({C:p.x0,R});return;}
+      // amount (µg) = predicted conc × (IS spiked per sample ÷ IS in standards)
+      let C=p.x0*k, lo=p.lo*k, hi=p.hi*k;
       if(applyC){
-        C=p.x0*FBAR;
+        C=p.x0*k*FBAR;
         const relCal=p.se/p.x0;
         const relTot=Math.sqrt(relCal*relCal+FREL*FREL);
         const half=p.t*relTot*Math.abs(C);
@@ -351,9 +372,11 @@
   $('smpDel').addEventListener('click',()=>delRow('sampleTable'));
   $('weighting').addEventListener('change',recompute);
   $('applyCorr').addEventListener('change',recompute);
+  $('isStd').addEventListener('input',recompute);
+  $('isSamp').addEventListener('input',recompute);
 
   $('copyBtn').addEventListener('click',()=>{
-    const rows=[['Sample','AUC_ax','AUC_is','R','Conc_ug/mL','CI_lo','CI_hi']];
+    const rows=[['Sample','AUC_ax','AUC_is','R','Astaxanthin_ug','CI_lo','CI_hi']];
     $('sampleTable').querySelectorAll('tbody tr').forEach(tr=>{
       const ci=tr.querySelector('.m-ci').textContent.split('–').map(s=>s.trim());
       rows.push([tr.querySelector('.m-lbl').value,

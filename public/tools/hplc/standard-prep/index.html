@@ -56,7 +56,7 @@
       <label>Spacing<select id="spacing"><option value="lin">Linear</option><option value="log" selected>Logarithmic</option></select></label>
       <label>IS target conc. (µg/mL)<input type="number" id="is_target" value="1" step="0.1"></label>
     </div>
-    <div class="derived">IS held constant across all standards — a fixed <b id="is_vol">—</b> µL of IS stock per vial.</div>
+    <div class="derived">IS held constant across all standards — a fixed <b id="is_vol">—</b> µL of IS stock per vial. Enter this IS conc. as the <b>“IS in standards”</b> anchor in the analysis tool; it need <i>not</i> match the sample's spike.</div>
   </fieldset>
 
   <table id="out">
@@ -70,6 +70,10 @@
 
   <div class="note">
     <b>Check before you trust the numbers.</b> The A<sup>1%</sup><sub>1cm</sub> values default to common literature figures (astaxanthin ≈2100; β-apo-8′-carotenal ≈2640) but are solvent- and wavelength-specific — overwrite them with the value for <i>your</i> solvent and detection wavelength, or your whole curve is rescaled by the ratio of the error. The dilution factor is the dilution you applied to the primary stock <i>before</i> reading its absorbance (set to 1 if you read it neat).
+  </div>
+
+  <div class="note">
+    <b>These are neat standards.</b> They do <i>not</i> go through extraction — make them up directly in MeOH. The internal standard goes into <i>samples</i> and matrix-matched standards separately, spiked at the very start (before extraction); that is what lets recovery cancel.
   </div>
 </div>
 
@@ -128,6 +132,7 @@
     const tb = $('out').querySelector('tbody');
     tb.innerHTML='';
     const flags=[];
+    if(isFinite(vIS) && vIS>0 && vIS<vmin) flags.push(`IS: ${sf(vIS)} µL per vial is below the ${vmin} µL pipette threshold — use a more dilute IS stock or a larger batch`);
 
     concs.forEach((c,i)=>{
       const vAx = axStock>0 ? c*vfinal/axStock*1000 : NaN;   // µL
