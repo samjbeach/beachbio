@@ -1,0 +1,38 @@
+name: Deploy to Cloudflare Workers
+
+# Publishes the site whenever changes land on main. Because this runs in CI with
+# an API token (not interactive `wrangler login`), pushing from any device —
+# including the mobile app — goes live automatically. See CLAUDE.md for context.
+
+on:
+  push:
+    branches: [main]
+  # Allows a manual run from the GitHub Actions tab if you ever need it.
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Avoid overlapping deploys; cancel an in-flight run if a newer push arrives.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

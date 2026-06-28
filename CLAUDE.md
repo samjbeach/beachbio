@@ -29,7 +29,14 @@ There is **no Worker script** — `wrangler.jsonc` just serves `./public`.
 
 ## Deploying
 
-From the repo root:
+**Auto-deploy (primary path):** pushing to `main` triggers
+`.github/workflows/deploy.yml`, which runs `wrangler deploy` in CI using a
+Cloudflare API token (repo secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`). This means changes go live from any device — including
+the mobile app — without an interactive login. You can also trigger it manually
+from the GitHub Actions tab (`workflow_dispatch`).
+
+**Manual deploy (fallback):** from the repo root —
 
 ```powershell
 npx wrangler deploy
@@ -38,7 +45,8 @@ npx wrangler deploy
 - Wrangler is a dev dependency (`npm install` if `node_modules` is missing).
 - **`wrangler login` is interactive** (opens a browser) and can't be run
   headlessly — if auth has expired, ask the user to run `npx wrangler login`
-  and complete it in the browser, then resume.
+  and complete it in the browser, then resume. (CI avoids this by using the
+  API token instead of `wrangler login`.)
 - Live URLs: custom domain `https://beachbio.io` and the workers.dev fallback
   `https://beachbio.samjbeach9.workers.dev`.
 
@@ -48,7 +56,8 @@ npx wrangler deploy
 - `gh` is installed but **not on PATH** — call it by full path:
   `& "C:\Program Files\GitHub CLI\gh.exe"`. It's already authenticated.
 - Normal flow after a change: `git add . ; git commit -m "…" ; git push`.
-- Standard rhythm this project follows: **edit → `wrangler deploy` → commit → push.**
+- Standard rhythm this project follows: **edit → commit → push** (CI auto-deploys
+  on push to `main`; run `wrangler deploy` manually only as a fallback).
 
 ## Adding / changing tools
 
