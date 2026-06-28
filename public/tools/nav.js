@@ -1,16 +1,10 @@
 (function () {
   // ── Tool registry ────────────────────────────────────────────────────────
   // Grouped by subfolder. To add a tool: drop it in /tools/<group>/<name>/,
-  // then add a { label, path } entry to the matching group below. The first
-  // group (heading: null) is the /tools root — tools that don't belong in a
-  // subfolder live there.
+  // then add a { label, path } entry to the matching group below. A group with
+  // `heading: null` renders as the unlabelled /tools root — for tools that
+  // don't belong in a subfolder.
   const GROUPS = [
-    {
-      heading: null,
-      tools: [
-        { label: "hello (test)", path: "/tools/hello/" },
-      ],
-    },
     {
       heading: "modelling",
       tools: [
@@ -186,30 +180,16 @@
       transform: translateX(0);
     }
 
-    /* collapse to top bar on small screens */
+    /* on small screens the sidebar is an off-canvas drawer that overlays the
+       content (rather than pushing it). The same collapse logic slides it in
+       and out, so it can be fully hidden — tap › to open, ‹ to close. */
     @media (max-width: 700px) {
       #tool-nav {
-        width: 100%;
-        height: auto;
-        position: sticky;
-        border-right: none;
-        border-bottom: 1px solid var(--nav-border);
-        transform: none !important;
-        overflow: visible;
+        width: min(264px, 80vw);
+        box-shadow: 2px 0 18px rgba(0, 0, 0, .45);
       }
-      #tool-nav .nav-header { padding: 10px 12px; }
-      #tool-nav .nav-btn { display: none; }
-      #tool-nav .nav-body {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px 14px;
-        padding: 8px 12px;
-      }
-      #tool-nav .nav-group, #tool-nav .nav-group + .nav-group { margin-top: 0; }
-      #tool-nav .nav-group-label { display: none; }
-      #tool-nav ul { display: flex; flex-wrap: wrap; gap: 2px; }
       body, body.nav-collapsed { margin-left: 0; }
-      #nav-open { display: none; }
+      #nav-open { top: 12px; left: 12px; }
     }
   `;
   document.head.appendChild(style);
@@ -256,7 +236,11 @@
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
   }
 
-  if (localStorage.getItem(COLLAPSED_KEY) === "1") {
+  const stored = localStorage.getItem(COLLAPSED_KEY);
+  const isMobile = window.matchMedia("(max-width: 700px)").matches;
+  // Honour a saved preference; otherwise start hidden on mobile (so the drawer
+  // doesn't cover the tool) and open on desktop.
+  if (stored === "1" || (stored === null && isMobile)) {
     document.body.classList.add("nav-collapsed");
   }
 

@@ -1,18 +1,18 @@
-# BeachBio tools — design system
+# BeachBio — design system
 
-The `/tools` section is a set of small, self-contained, single-file HTML tools
-that share one visual language. This doc is the guide for keeping them
-consistent and for adding new ones.
+The site shares one visual language across the landing page, the dashboard, and
+the `/tools` section (small, self-contained, single-file HTML tools). This doc
+is the guide for keeping things consistent and for adding new tools.
 
 ## The two reference files
 
 | File | What it is |
 |------|------------|
-| [`public/tools/tool.css`](public/tools/tool.css) | The single source of truth for tokens (colours, type) and component styling. Every tool links it. |
+| [`public/style.css`](public/style.css) | The **global** stylesheet — the single source of truth for tokens (colours, type) and component styling. The whole site links it at `/style.css`. |
 | [`public/tools/_template/index.html`](public/tools/_template/index.html) | A live style guide + copy-me starter. Open it in the browser (or in Claude Design) to see every component rendered. Start new tools by copying its `<head>` and structure. |
 
-`tool.css` and the template are meant to be edited together: if you add a
-reusable pattern, put the styles in `tool.css` and show it off in the template.
+`style.css` and the template are meant to be edited together: if you add a
+reusable pattern, put the styles in `style.css` and show it off in the template.
 
 ## Design language at a glance
 
@@ -28,7 +28,7 @@ reusable pattern, put the styles in `tool.css` and show it off in the template.
 
 ### Tokens
 
-All defined as CSS variables in `tool.css`:
+All defined as CSS variables in `style.css`:
 
 ```
 surfaces  --ground --panel --field --line --inputbg --inputbd
@@ -59,25 +59,28 @@ Tools are grouped into subfolders by domain. Each tool is its own folder with an
 `index.html` so the URL is clean (`/tools/<group>/<name>/`).
 
 ```
-public/tools/
-├── index.html                      directory page (lists all tools)
-├── tool.css                        shared design system
-├── nav.js                          injected sidebar (grouped registry)
-├── _template/index.html            style guide + starter
-├── hello/index.html                root group (ungrouped tools)
-├── modelling/
-│   └── saponification-timer/index.html
-└── hplc/
-    ├── standard-prep/index.html
-    └── analysis/index.html
+public/
+├── style.css                       global design system (linked site-wide)
+└── tools/
+    ├── index.html                  directory page (lists all tools)
+    ├── nav.js                      injected sidebar (grouped registry)
+    ├── _template/index.html        style guide + starter
+    ├── modelling/
+    │   └── saponification-timer/index.html
+    └── hplc/
+        ├── standard-prep/index.html
+        └── analysis/index.html
 ```
+
+(A group with `heading: null` in `nav.js` renders ungrouped tools directly
+under `/tools/<name>/` — there are none at the moment.)
 
 ## Adding a new tool
 
 1. **Create the folder.** Pick a group: `public/tools/<group>/<name>/index.html`
    (or drop it directly under `public/tools/<name>/` for an ungrouped/root tool).
 2. **Start from the template.** Copy the `<head>` boilerplate and overall
-   structure from `_template/index.html`. Link `tool.css`; keep tool-specific
+   structure from `_template/index.html`. Link `/style.css`; keep tool-specific
    CSS in a small `<style>` block.
 3. **Add the sidebar script.** Include `<script src="/tools/nav.js"></script>`
    immediately before `</body>`.

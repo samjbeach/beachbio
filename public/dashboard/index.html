@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sam Beach</title>
+  <title>Dashboard — Sam Beach</title>
 
-  <!-- shared BeachBio design system (dark teal theme) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -27,10 +26,9 @@
       padding: 48px 0;
     }
     .home h1 { font-size: 34px; }
-    .home-links { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-    .home-links a {
+    .home .back {
       font-family: var(--mono);
-      font-size: 13px;
+      font-size: 12px;
       letter-spacing: .04em;
       color: var(--muted);
       text-decoration: none;
@@ -38,29 +36,17 @@
       border: 1px solid var(--inputbd);
       border-radius: 7px;
       background: var(--inputbg);
-      transition: border-color .15s, color .15s, background .15s;
+      transition: border-color .15s, color .15s;
     }
-    .home-links a:hover { border-color: var(--accent); color: var(--ink); }
-    footer {
-      text-align: center;
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--faint);
-      padding: 18px 0;
-    }
+    .home .back:hover { border-color: var(--accent); color: var(--ink); }
   </style>
 </head>
 <body>
   <main class="wrap home">
-    <p class="eyebrow">beachbio.io</p>
+    <p class="eyebrow">beachbio.io · dashboard</p>
     <h1>Coming soon</h1>
-    <p class="sub" style="margin:0">Something is being built here.</p>
-    <nav class="home-links">
-      <a href="/tools/">Tools&nbsp;↗</a>
-      <a href="/dashboard/">Dashboard&nbsp;↗</a>
-    </nav>
+    <p class="sub" style="margin:0">This page is under construction.</p>
+    <a class="back" href="/">← home</a>
   </main>
-
-  <footer>beachbio.io</footer>
 </body>
 </html>

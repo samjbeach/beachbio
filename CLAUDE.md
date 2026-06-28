@@ -2,25 +2,28 @@
 
 Personal site at **beachbio.io**. Static HTML/CSS/JS, no framework, no build step.
 Hosted on **Cloudflare Workers Static Assets** (NOT Pages). A public landing page
-plus a `/tools/` section gated behind Cloudflare Access.
+and a `/dashboard/` placeholder, plus a `/tools/` section gated behind Cloudflare
+Access.
 
 ## Layout
 
 ```
 public/                 everything servable lives here
-├── index.html          landing page
-├── style.css           landing-page styles (serif theme)
+├── index.html          landing page ("coming soon")
+├── style.css           GLOBAL stylesheet / design system (dark teal theme)
+├── dashboard/          placeholder page (to be built)
 └── tools/
     ├── index.html      tools directory page
-    ├── tool.css        shared design system for tools (dark teal theme)
     ├── nav.js          injected grouped sidebar (tool registry lives here)
     ├── _template/      style guide + copy-me starter for new tools
-    ├── hello/          root-group tool
     ├── modelling/      grouped tools …
     └── hplc/
 wrangler.jsonc          Workers Static Assets config (assets dir = ./public)
-DESIGN.md               tools design system + "how to add a tool" guide
+DESIGN.md               design system + "how to add a tool" guide
 ```
+
+`style.css` is the one shared stylesheet for the **whole site** — landing page,
+dashboard, and every tool link it (`<link rel="stylesheet" href="/style.css">`).
 
 There is **no Worker script** — `wrangler.jsonc` just serves `./public`.
 
@@ -51,12 +54,12 @@ npx wrangler deploy
 
 Tools are single self-contained `index.html` files grouped by subfolder under
 `public/tools/<group>/<name>/`. To add one, follow the checklist in
-[DESIGN.md](DESIGN.md): create the folder from `_template`, link `tool.css`,
+[DESIGN.md](DESIGN.md): create the folder from `_template`, link `/style.css`,
 add `<script src="/tools/nav.js"></script>`, register it in the `GROUPS` array
 in `nav.js`, and list it on `public/tools/index.html`.
 
 The saponification tool keeps its CSS inline (canonical look, canvas-specific);
-the shared `tool.css` mirrors its tokens. Other tools use `tool.css`.
+the global `style.css` mirrors its tokens. Other tools use `style.css`.
 
 ## Cloudflare Access (security model)
 

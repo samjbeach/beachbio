@@ -4,38 +4,63 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tools — Sam Beach</title>
+
+  <!-- shared BeachBio design system (dark teal theme) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <style>
+    .back {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .04em;
+      color: var(--muted);
+      text-decoration: none;
+      margin-bottom: 16px;
+      transition: color .15s;
+    }
+    .back:hover { color: var(--ink); }
+
+    .tool-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+    .tool-list a {
+      display: block;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--ink);
+      text-decoration: none;
+      padding: 11px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      transition: border-color .15s, background .15s;
+    }
+    .tool-list a:hover { border-color: var(--accent); background: var(--inputbg); }
+  </style>
 </head>
 <body>
-  <main>
-    <header>
-      <a href="/" class="back">← back</a>
-      <h1>Tools</h1>
-      <p class="tagline">Internal utilities. Access restricted.</p>
-    </header>
+  <div class="wrap">
+    <a href="/" class="back">← home</a>
+    <p class="eyebrow">internal · access restricted</p>
+    <h1>Tools</h1>
+    <p class="sub">Small, self-contained utilities. Grouped by domain.</p>
 
-    <section class="links">
-      <a href="/tools/hello/">hello (test)</a>
-    </section>
+    <h2>modelling</h2>
+    <div class="tool-list">
+      <a href="/tools/modelling/saponification-timer/">Saponification timer</a>
+    </div>
 
-    <section class="group">
-      <h2>modelling</h2>
-      <div class="links">
-        <a href="/tools/modelling/saponification-timer/">Saponification timer</a>
-      </div>
-    </section>
+    <h2>HPLC</h2>
+    <div class="tool-list">
+      <a href="/tools/hplc/standard-prep/">Standard prep</a>
+      <a href="/tools/hplc/analysis/">Analysis</a>
+    </div>
 
-    <section class="group">
-      <h2>HPLC</h2>
-      <div class="links">
-        <a href="/tools/hplc/standard-prep/">Standard prep</a>
-        <a href="/tools/hplc/analysis/">Analysis</a>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <span>beachbio.io / tools</span>
-  </footer>
+    <h2>reference</h2>
+    <div class="tool-list">
+      <a href="/tools/_template/">Style guide</a>
+    </div>
+  </div>
 </body>
 </html>
