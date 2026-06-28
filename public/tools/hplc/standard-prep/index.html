@@ -10,10 +10,11 @@
 <link rel="stylesheet" href="/tools/tool.css">
 <style>
   /* tool-specific tweaks only */
-  .wrap { max-width: 960px; }
-  fieldset label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 8px 0; }
+  .wrap { max-width: 860px; }
+  fieldset label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; font-size: 13px; }
   fieldset label span { color: var(--faint); font-size: 11px; }
-  fieldset input[type=number], fieldset select { width: 130px; flex: none; }
+  fieldset input[type=number], fieldset select { width: 90px; flex: none; padding: 3px 6px; }
+  fieldset .derived { margin-top: 6px; }
   table { margin-top: 18px; }
 </style>
 </head>
@@ -27,23 +28,17 @@
     <!-- ANALYTE -->
     <fieldset>
       <legend>Astaxanthin <span class="legend-sub">(analyte)</span></legend>
-      <label>A<sup>1%</sup><sub>1cm</sub> <span>verify for your solvent/λ</span><input type="number" id="ax_e" value="2100" step="10"></label>
-      <label>λ (nm) <span>informational</span><input type="number" id="ax_wl" value="478" step="1"></label>
-      <label>Path length (cm)<input type="number" id="ax_l" value="1" step="0.1"></label>
       <label>Measured absorbance<input type="number" id="ax_a" value="0.500" step="0.001"></label>
-      <label>Dilution factor for reading<input type="number" id="ax_df" value="100" step="1"></label>
-      <div class="derived">Primary stock: <b id="ax_stock">—</b> µg/mL</div>
+      <label>Dilution factor for reading<input type="number" id="ax_df" value="30" step="1"></label>
+      <div class="derived">A<sup>1%</sup><sub>1cm</sub> 2100 · λ 478 nm · 1 cm. Primary stock: <b id="ax_stock">—</b> µg/mL</div>
     </fieldset>
 
     <!-- INTERNAL STANDARD -->
     <fieldset>
       <legend>apo-carotenal <span class="legend-sub">(internal standard)</span></legend>
-      <label>A<sup>1%</sup><sub>1cm</sub> <span>verify for your solvent/λ</span><input type="number" id="is_e" value="2640" step="10"></label>
-      <label>λ (nm) <span>informational</span><input type="number" id="is_wl" value="461" step="1"></label>
-      <label>Path length (cm)<input type="number" id="is_l" value="1" step="0.1"></label>
       <label>Measured absorbance<input type="number" id="is_a" value="0.500" step="0.001"></label>
-      <label>Dilution factor for reading<input type="number" id="is_df" value="100" step="1"></label>
-      <div class="derived">Primary stock: <b id="is_stock">—</b> µg/mL</div>
+      <label>Dilution factor for reading<input type="number" id="is_df" value="30" step="1"></label>
+      <div class="derived">A<sup>1%</sup><sub>1cm</sub> 2640 · λ 461 nm · 1 cm. Primary stock: <b id="is_stock">—</b> µg/mL</div>
     </fieldset>
   </div>
 
@@ -52,18 +47,18 @@
     <fieldset>
       <legend>Standard series <span class="legend-sub">(astaxanthin)</span></legend>
       <label>Final volume (mL)<input type="number" id="vfinal" value="1" step="0.1"></label>
-      <label>Number of standards<input type="number" id="n" value="6" step="1" min="1"></label>
+      <label>Number of standards<input type="number" id="n" value="5" step="1" min="1"></label>
       <label>Lowest conc. (µg/mL)<input type="number" id="cmin" value="0.1" step="0.01"></label>
       <label>Highest conc. (µg/mL)<input type="number" id="cmax" value="10" step="0.1"></label>
-      <label>Spacing<select id="spacing"><option value="lin">Linear</option><option value="log">Logarithmic</option></select></label>
+      <label>Spacing<select id="spacing"><option value="lin">Linear</option><option value="log" selected>Logarithmic</option></select></label>
     </fieldset>
 
     <!-- IS LEVEL -->
     <fieldset>
       <legend>Internal standard level</legend>
-      <label>Target conc. in each std (µg/mL)<input type="number" id="is_target" value="2" step="0.1"></label>
+      <label>Target conc. in each std (µg/mL)<input type="number" id="is_target" value="1" step="0.1"></label>
       <div class="derived">Held constant across all standards — a fixed volume of IS stock per vial.<br>Per-vial IS volume: <b id="is_vol">—</b> µL</div>
-      <label style="margin-top:10px">Min reliable pipette vol (µL) <span>warning threshold</span><input type="number" id="vmin" value="2" step="0.5"></label>
+      <label style="margin-top:10px">Min reliable pipette vol (µL) <span>warning threshold</span><input type="number" id="vmin" value="1" step="0.5"></label>
     </fieldset>
   </div>
 
@@ -84,7 +79,11 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
-  const ids = ['ax_e','ax_l','ax_a','ax_df','is_e','is_l','is_a','is_df',
+  // Fixed spectroscopic constants — edit here if solvent/λ changes.
+  const AX = { e: 2100, l: 1 };   // astaxanthin: A1%1cm, path length (cm)
+  const IS = { e: 2640, l: 1 };   // apo-carotenal: A1%1cm, path length (cm)
+
+  const ids = ['ax_a','ax_df','is_a','is_df',
                'vfinal','n','cmin','cmax','spacing','is_target','vmin'];
   ids.forEach(i => $(i).addEventListener('input', render));
 
@@ -110,18 +109,20 @@
   }
 
   const fmt = (x,d=2) => (isFinite(x)? x.toFixed(d) : '—');
+  // round to s significant figures, trimming trailing zeros
+  const sf = (x,s=3) => (isFinite(x) ? parseFloat(x.toPrecision(s)).toString() : '—');
 
   function render(){
-    const axStock = stockConc(+$('ax_e').value,+$('ax_l').value,+$('ax_a').value,+$('ax_df').value);
-    const isStock = stockConc(+$('is_e').value,+$('is_l').value,+$('is_a').value,+$('is_df').value);
-    $('ax_stock').textContent = fmt(axStock,2);
-    $('is_stock').textContent = fmt(isStock,2);
+    const axStock = stockConc(AX.e, AX.l, +$('ax_a').value, +$('ax_df').value);
+    const isStock = stockConc(IS.e, IS.l, +$('is_a').value, +$('is_df').value);
+    $('ax_stock').textContent = sf(axStock);
+    $('is_stock').textContent = sf(isStock);
 
     const vfinal = +$('vfinal').value;        // mL
     const vfinalUL = vfinal*1000;
     const isTarget = +$('is_target').value;    // µg/mL
     const vIS = isStock>0 ? isTarget*vfinal/isStock*1000 : NaN;  // µL, constant
-    $('is_vol').textContent = fmt(vIS,2);
+    $('is_vol').textContent = sf(vIS);
 
     const vmin = +$('vmin').value;
     const concs = series(+$('n').value, +$('cmin').value, +$('cmax').value, $('spacing').value);
@@ -136,14 +137,14 @@
       const tr=document.createElement('tr');
 
       let problem=false, msgs=[];
-      if(isFinite(vAx) && vAx>0 && vAx<vmin){ problem=true; msgs.push(`astaxanthin ${fmt(vAx,2)} µL below pipette threshold`);}
+      if(isFinite(vAx) && vAx>0 && vAx<vmin){ problem=true; msgs.push(`astaxanthin ${sf(vAx)} µL below pipette threshold`);}
       if(isFinite(vIS) && vIS>0 && vIS<vmin){ problem=true; }
-      if(isFinite(vMeOH) && vMeOH<0){ problem=true; msgs.push(`requires ${fmt(-vMeOH,1)} µL more than final volume — stock too dilute for this point`);}
+      if(isFinite(vMeOH) && vMeOH<0){ problem=true; msgs.push(`requires ${sf(-vMeOH)} µL more than final volume — stock too dilute for this point`);}
       if(problem) tr.className='flag';
-      if(msgs.length) flags.push(`Std ${i+1} (${fmt(c,3)} µg/mL): ${msgs.join('; ')}`);
+      if(msgs.length) flags.push(`Std ${i+1} (${sf(c)} µg/mL): ${msgs.join('; ')}`);
 
-      const meOHcell = (isFinite(vMeOH)&&vMeOH<0) ? `<span class="warn">${fmt(vMeOH,2)}</span>` : fmt(vMeOH,2);
-      tr.innerHTML = `<td>${i+1}</td><td>${fmt(c,3)}</td><td>${fmt(vAx,2)}</td><td>${fmt(vIS,2)}</td><td>${meOHcell}</td>`;
+      const meOHcell = (isFinite(vMeOH)&&vMeOH<0) ? `<span class="warn">${sf(vMeOH)}</span>` : sf(vMeOH);
+      tr.innerHTML = `<td>${i+1}</td><td>${sf(c)}</td><td>${sf(vAx)}</td><td>${sf(vIS)}</td><td>${meOHcell}</td>`;
       tb.appendChild(tr);
     });
 
