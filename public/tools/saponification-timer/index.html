@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BSF Saponification — defatting clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#0C2426; --panel:#0F2A2D; --field:#08191B; --line:#234B4F;
+    --ink:#EAF2F1; --muted:#8FB0AE; --faint:#5B807E;
+    --analyte:#F2674B;      /* astaxanthin coral — the thing we care about */
+    --bonds:#E0A45C;        /* saponified-bond / soap gold */
+    --oh:#5FB8C4;           /* hydroxide cyan */
+    --deg:#C77FA6;          /* base-exposure rose */
+    --window:#F2674B;
+    --inputbg:#0A1F21; --inputbd:#2A5054;
+    --sans:'Space Grotesk',system-ui,-apple-system,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--ground); color:var(--ink); font-family:var(--sans);
+    line-height:1.45; -webkit-font-smoothing:antialiased; padding:22px;
+  }
+  .wrap{max-width:1180px; margin:0 auto}
+  header{margin-bottom:18px}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--analyte); margin:0 0 6px}
+  h1{font-size:25px; font-weight:600; margin:0; letter-spacing:-.01em}
+  .sub{color:var(--muted); font-size:13.5px; margin:7px 0 0; max-width:70ch}
+  .grid{display:grid; grid-template-columns:300px 1fr; gap:18px; margin-top:18px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px}
+  .panel h2{font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 14px; font-weight:600}
+  label{display:block; font-size:11.5px; color:var(--muted); margin:0 0 4px; letter-spacing:.01em}
+  .field-row{margin-bottom:13px}
+  .unit{color:var(--faint)}
+  input[type=number]{
+    width:100%; font-family:var(--mono); font-size:14px; color:var(--ink);
+    background:var(--inputbg); border:1px solid var(--inputbd); border-radius:7px;
+    padding:8px 10px; outline:none;
+  }
+  input[type=number]:focus{border-color:var(--analyte); box-shadow:0 0 0 3px rgba(242,103,75,.18)}
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:9px}
+  .presets{display:flex; gap:7px; flex-wrap:wrap; margin-bottom:6px}
+  button{font-family:var(--sans); cursor:pointer}
+  .preset{
+    font-size:11.5px; padding:6px 9px; border-radius:6px; background:var(--inputbg);
+    color:var(--muted); border:1px solid var(--inputbd);
+  }
+  .preset:hover{border-color:var(--analyte); color:var(--ink)}
+  .preset:focus-visible{outline:2px solid var(--analyte); outline-offset:2px}
+  .hint{font-size:11px; color:var(--faint); margin:8px 0 0; line-height:1.5}
+  .calib{border-top:1px dashed var(--line); margin-top:16px; padding-top:14px}
+  .calib-result{font-family:var(--mono); font-size:12px; color:var(--analyte); margin-top:8px; min-height:16px}
+  .plotwrap{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 14px 8px}
+  canvas{width:100%; height:auto; display:block; touch-action:none}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; font-family:var(--mono); font-size:11.5px; color:var(--muted); padding:10px 4px 4px}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .swatch{width:14px; height:3px; border-radius:2px; display:inline-block}
+  .swatch.dash{background:none; border-top:2px dashed var(--deg); height:0}
+  .readout{
+    margin-top:14px; background:var(--field); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px;
+  }
+  table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:13px}
+  th{text-align:left; color:var(--faint); font-weight:500; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; padding:0 0 8px}
+  td{padding:5px 0; border-top:1px solid rgba(35,75,79,.5)}
+  td:last-child,th:last-child{text-align:right}
+  .row-win td{color:var(--analyte)}
+  .taper{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:12px; line-height:1.7}
+  .taper b{color:var(--oh); font-weight:600}
+  .note{font-size:11.5px; color:var(--faint); line-height:1.6; margin-top:14px}
+  .crosshair{font-family:var(--mono); font-size:12px; color:var(--muted); min-height:18px; padding:0 4px}
+  .crosshair b{color:var(--ink)}
+  .toggle{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-top:4px}
+  .toggle input{accent-color:var(--analyte); width:15px; height:15px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Defatting clock · second-order saponification</p>
+    <h1>When is the BSF reaction defatted enough to quench?</h1>
+    <p class="sub">A sequential ester-hydrolysis model (TAG→DAG→MAG→glycerol, each step second-order in [OH⁻]) that tracks neutral lipid leaving the organic phase. The absolute rate constant for this exact system isn't in the literature, so <b style="color:var(--analyte)">calibrate it against one TLC timepoint</b> — then the curve becomes a real predictor for re-scaling lipid, base, volume or temperature.</p>
+  </header>
+
+  <div class="grid">
+    <!-- CONTROLS -->
+    <div class="panel" role="form" aria-label="Reaction inputs">
+      <h2>Reaction</h2>
+      <div class="field-row"><label for="lipid">Extracted lipid <span class="unit">mg</span></label><input type="number" id="lipid" value="85" step="1" min="0.1"></div>
+      <div class="field-row"><label for="vol">Reaction volume <span class="unit">mL</span></label><input type="number" id="vol" value="30" step="1" min="0.1"></div>
+      <div class="field-row"><label for="koh">[KOH] <span class="unit">M</span></label><input type="number" id="koh" value="0.05" step="0.005" min="0.001"></div>
+      <div class="field-row"><label for="temp">Temperature <span class="unit">°C</span></label><input type="number" id="temp" value="37" step="1"></div>
+      <div class="two">
+        <div class="field-row"><label for="mw">TAG MW <span class="unit">g/mol</span></label><input type="number" id="mw" value="639" step="1" min="100"></div>
+        <div class="field-row"><label for="ea">Eₐ <span class="unit">kJ/mol</span></label><input type="number" id="ea" value="62" step="1"></div>
+      </div>
+
+      <h2 style="margin-top:6px">Rate constant kᵦ <span class="unit" style="text-transform:none;letter-spacing:0">(per bond, L mol⁻¹ min⁻¹, at T above)</span></h2>
+      <div class="presets">
+        <button class="preset" id="pSlow" type="button">Protocol ~8 h</button>
+        <button class="preset" id="pFast" type="button">Lit. FAME (fast)</button>
+      </div>
+      <input type="number" id="kb" value="0.214" step="0.001" min="0.0001">
+      <p class="hint">Presets seed the two defensible bounds: the protocol's own ~8 h expectation vs. homogeneous FAME-in-ethanol kinetics (Lim &amp; Harvey). They differ ~17×. Treat the true value as unknown until calibrated.</p>
+
+      <div class="calib">
+        <h2 style="margin-bottom:10px">Calibrate from TLC</h2>
+        <div class="two">
+          <div class="field-row"><label for="ct">at time <span class="unit">h</span></label><input type="number" id="ct" value="4" step="0.5" min="0.05"></div>
+          <div class="field-row"><label for="cv">neutral lipid left <span class="unit">%</span></label><input type="number" id="cv" value="55" step="1" min="0.1" max="99.9"></div>
+        </div>
+        <button class="preset" id="doCalib" type="button" style="width:100%;padding:9px;border-color:var(--analyte);color:var(--ink)">Solve kᵦ &amp; apply</button>
+        <div class="calib-result" id="calibOut" aria-live="polite"></div>
+        <p class="hint">Read "neutral lipid left" off the high-Rf TAG/DAG band intensity vs. the t=0 lane (densitometry or eyeball). One point fixes kᵦ; a second point validates the order.</p>
+      </div>
+    </div>
+
+    <!-- PLOT + READOUT -->
+    <div>
+      <div class="plotwrap">
+        <canvas id="plot" width="820" height="420" aria-label="Lipid remaining over time"></canvas>
+        <div class="crosshair" id="cross">Hover the plot to read values at a given time.</div>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--analyte)"></i>neutral lipid remaining (TLC band)</span>
+          <span><i class="swatch" style="background:var(--bonds)"></i>ester bonds remaining</span>
+          <span><i class="swatch" style="background:var(--oh)"></i>[OH⁻] (M, right scale)</span>
+          <span><i class="swatch dash"></i>base-exposure (∝∫[OH⁻]ⁿdt, illustrative)</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="showDeg" checked> show base-exposure index (n = <input type="number" id="nexp" value="1.5" step="0.1" min="0.5" style="width:54px;display:inline-block;padding:3px 6px;font-size:12px">)</label>
+      </div>
+
+      <div class="readout">
+        <table aria-label="Time to reach defatting thresholds">
+          <thead><tr><th>Neutral lipid remaining</th><th>= defatted</th><th>time</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="taper" id="taper"></div>
+      </div>
+
+      <p class="note" id="caveat"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const R = 8.314;
+
+// ---- model: sequential second-order hydrolysis, RK4 ----
+function simulate(p){
+  const V = p.vol/1000;
+  const CT0 = (p.lipid/1000/p.mw)/V;      // mol/L triglyceride
+  const COH0 = p.koh;
+  // Arrhenius scale kb from its reference T (the "temp" field it was defined at is the current temp,
+  // so kb is treated as the value AT the current temperature already). No extra scaling needed here;
+  // temperature enters when the user changes T after calibrating — handled by scaleKb().
+  const kb = p.kb;
+  let s = [CT0,0,0,0,COH0];               // CT,CD,CM,CG,COH
+  const dt = 0.05;                         // minutes
+  const deriv = y=>{
+    const [CT,CD,CM,,COH]=y;
+    const r1=3*kb*CT*COH, r2=2*kb*CD*COH, r3=kb*CM*COH;
+    return [-r1, r1-r2, r2-r3, r3, -(r1+r2+r3)];
+  };
+  const t=[], neutral=[], bonds=[], oh=[], exposure=[];
+  let exp=0;
+  const n = p.nexp;
+  // integrate until <1.5% neutral or 60 h cap
+  let i=0, tmax=60*60;
+  while(i*dt<=tmax){
+    const tm=i*dt;
+    const CT=s[0],CD=s[1],CM=s[2],COH=s[4];
+    const neu=(CT+CD+CM)/CT0*100;
+    t.push(tm/60); neutral.push(neu);
+    bonds.push((3*CT+2*CD+CM)/(3*CT0)*100);
+    oh.push(COH);
+    exp += Math.pow(Math.max(COH,0),n)*dt; exposure.push(exp);
+    if(neu<=1.5 && tm>5) break;
+    const k1=deriv(s),
+          k2=deriv(s.map((v,j)=>v+0.5*dt*k1[j])),
+          k3=deriv(s.map((v,j)=>v+0.5*dt*k2[j])),
+          k4=deriv(s.map((v,j)=>v+dt*k3[j]));
+    s=s.map((v,j)=>Math.max(0, v+dt/6*(k1[j]+2*k2[j]+2*k3[j]+k4[j])));
+    i++;
+  }
+  const emax = exposure[exposure.length-1]||1;
+  return {t,neutral,bonds,oh,exposure:exposure.map(e=>e/emax*100),CT0,COH0,COHend:oh[oh.length-1]};
+}
+
+function timeTo(res, pct){
+  for(let i=0;i<res.neutral.length;i++) if(res.neutral[i]<=pct) return res.t[i];
+  return null;
+}
+
+// Arrhenius: re-scale kb when temperature changes relative to the temp at which kb was last set.
+let kbDefinedAtT = 37;  // the temperature the current kb value corresponds to
+function scaleKb(kbVal, fromT, toT, Ea){
+  return kbVal*Math.exp(-Ea*1000/R*(1/(toT+273.15)-1/(fromT+273.15)));
+}
+
+function readInputs(){
+  return {
+    lipid:+$('lipid').value, vol:+$('vol').value, koh:+$('koh').value,
+    temp:+$('temp').value, mw:+$('mw').value, ea:+$('ea').value,
+    kb:+$('kb').value, nexp:+$('nexp').value
+  };
+}
+
+// ---- drawing ----
+const cv=$('plot'), ctx=cv.getContext('2d');
+let lastRes=null, lastP=null, geom=null;
+const css = k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+function draw(res,p){
+  const W=cv.width, H=cv.height, dpr=1;
+  ctx.clearRect(0,0,W,H);
+  const L=52, Rr=52, Tp=18, B=44;
+  const x0=L, x1=W-Rr, y0=Tp, y1=H-B;
+  const tmax=Math.max(res.t[res.t.length-1],0.5);
+  const px = t=>x0+(t/tmax)*(x1-x0);
+  const py = v=>y1-(v/100)*(y1-y0);            // 0..100 %
+  const pyOH = v=>y1-(v/(p.koh*1.05))*(y1-y0); // right scale for OH
+  geom={x0,x1,y0,y1,tmax,px};
+
+  // grid
+  ctx.strokeStyle='rgba(35,75,79,.45)'; ctx.lineWidth=1; ctx.font='11px '+css('--mono');
+  ctx.fillStyle=css('--faint'); ctx.textAlign='right'; ctx.textBaseline='middle';
+  for(let g=0; g<=100; g+=20){
+    const y=py(g); ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke();
+    ctx.fillStyle=css('--analyte'); ctx.fillText(g+'%', x0-8, y);
+  }
+  // right axis OH labels
+  ctx.fillStyle=css('--oh'); ctx.textAlign='left';
+  for(let g=0; g<=1; g+=0.25){
+    const val=p.koh*1.05*g; const y=y1-g*(y1-y0);
+    ctx.fillText(val.toFixed(3), x1+8, y);
+  }
+  // x ticks
+  ctx.fillStyle=css('--faint'); ctx.textAlign='center'; ctx.textBaseline='top';
+  const step = tmax<=2?0.5: tmax<=6?1: tmax<=14?2:4;
+  for(let tt=0; tt<=tmax+1e-6; tt+=step){
+    const x=px(tt); ctx.beginPath(); ctx.moveTo(x,y1); ctx.lineTo(x,y1+4); ctx.stroke();
+    ctx.fillText(tt.toFixed(tt%1?1:0)+'h', x, y1+8);
+  }
+
+  // quench window band (90–95% defat = 10%→5% neutral remaining)
+  const tWinA=timeTo(res,10), tWinB=timeTo(res,5);
+  if(tWinA!=null){
+    const xa=px(tWinA), xb=px(tWinB!=null?tWinB:res.t[res.t.length-1]);
+    ctx.fillStyle='rgba(242,103,75,.10)';
+    ctx.fillRect(xa,y0,xb-xa,y1-y0);
+    ctx.strokeStyle='rgba(242,103,75,.45)'; ctx.setLineDash([4,4]); ctx.lineWidth=1;
+    [xa,xb].forEach(x=>{ctx.beginPath();ctx.moveTo(x,y0);ctx.lineTo(x,y1);ctx.stroke();});
+    ctx.setLineDash([]);
+    ctx.fillStyle=css('--analyte'); ctx.font='10px '+css('--mono'); ctx.textAlign='center'; ctx.textBaseline='bottom';
+    ctx.fillText('quench window', (xa+xb)/2, y0+12);
+  }
+
+  const line=(arr,mapper,color,dash=false,w=2)=>{
+    ctx.strokeStyle=color; ctx.lineWidth=w; ctx.beginPath();
+    if(dash)ctx.setLineDash([6,5]); else ctx.setLineDash([]);
+    arr.forEach((v,i)=>{const x=px(res.t[i]),y=mapper(v); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  if($('showDeg').checked) line(res.exposure,py,css('--deg'),true,1.6);
+  line(res.oh,pyOH,css('--oh'),false,1.6);
+  line(res.bonds,py,css('--bonds'),false,2);
+  line(res.neutral,py,css('--analyte'),false,2.6);
+
+  // axis frame
+  ctx.strokeStyle=css('--line'); ctx.lineWidth=1.2;
+  ctx.strokeRect(x0,y0,x1-x0,y1-y0);
+}
+
+function refresh(){
+  const p=readInputs();
+  // apply Arrhenius if temperature differs from the temp kb was defined at
+  if(p.temp!==kbDefinedAtT){
+    const newkb = scaleKb(p.kb, kbDefinedAtT, p.temp, p.ea);
+    $('kb').value = newkb.toPrecision(3);
+    kbDefinedAtT = p.temp;
+    p.kb = newkb;
+  }
+  const res=simulate(p); lastRes=res; lastP=p;
+  draw(res,p);
+
+  // table
+  const tb=$('tbody'); tb.innerHTML='';
+  [[50,'50%'],[20,'80%'],[10,'90%'],[5,'95%'],[2,'98%']].forEach(([rem,defat])=>{
+    const t=timeTo(res,rem);
+    const inWin = rem<=10 && rem>=5;
+    const tr=document.createElement('tr'); if(inWin)tr.className='row-win';
+    tr.innerHTML=`<td>${rem}%</td><td>${defat}</td><td>${t!=null?t.toFixed(2)+' h':'—'}</td>`;
+    tb.appendChild(tr);
+  });
+
+  const tWinA=timeTo(res,10), tWinB=timeTo(res,5);
+  $('taper').innerHTML =
+    `[OH⁻] taper: <b>${res.COH0.toFixed(4)} → ${res.COHend.toFixed(4)} M</b> &nbsp;·&nbsp; `+
+    `quench window (90–95% defat): <b style="color:var(--analyte)">${tWinA!=null?tWinA.toFixed(1):'—'}–${tWinB!=null?tWinB.toFixed(1):'—'} h</b>`;
+
+  $('caveat').textContent =
+    'Assumes a single clear phase (homogeneous kinetics). If the medium goes cloudy the reaction becomes interface-limited and runs slower than shown — dial water back. '+
+    'The model tracks defatting only; it does NOT model astacene formation or cis/trans isomerization, so "faster via more heat/base" can still cost recovery. The base-exposure index is a relative proxy for that risk, not an absolute loss.';
+}
+
+// presets
+$('pSlow').onclick=()=>{$('kb').value='0.214'; $('temp').value='37'; kbDefinedAtT=37; refresh();};
+$('pFast').onclick=()=>{$('kb').value='3.64'; $('temp').value='37'; kbDefinedAtT=37; refresh();};
+
+// calibration: bisection on kb so neutral%(t_cal)=observed
+$('doCalib').onclick=()=>{
+  const tc=+$('ct').value, target=+$('cv').value, p=readInputs();
+  const at = kb=>{
+    const r=simulate({...p,kb});
+    // interpolate neutral at tc
+    for(let i=1;i<r.t.length;i++){
+      if(r.t[i]>=tc){
+        const f=(tc-r.t[i-1])/(r.t[i]-r.t[i-1]);
+        return r.neutral[i-1]+f*(r.neutral[i]-r.neutral[i-1]);
+      }
+    }
+    return r.neutral[r.neutral.length-1];
+  };
+  let lo=1e-4, hi=200; // neutral% is monotonically decreasing in kb
+  if(at(lo)<target){ $('calibOut').textContent='Even kᵦ→0 over-saponifies by t='+tc+' h — check the timepoint.'; return; }
+  if(at(hi)>target){ $('calibOut').textContent='Need kᵦ>200; reaction is faster than the model range — lower the observed %.'; return; }
+  for(let i=0;i<50;i++){const mid=Math.sqrt(lo*hi); if(at(mid)>target)lo=mid; else hi=mid;}
+  const kb=Math.sqrt(lo*hi);
+  $('kb').value=kb.toPrecision(3); kbDefinedAtT=p.temp;
+  $('calibOut').textContent=`kᵦ = ${kb.toPrecision(3)} L mol⁻¹ min⁻¹ at ${p.temp} °C ✓ applied`;
+  refresh();
+};
+
+// hover crosshair
+function hover(ev){
+  if(!lastRes||!geom)return;
+  const rect=cv.getBoundingClientRect();
+  const sx=cv.width/rect.width;
+  const mx=(ev.clientX-rect.left)*sx;
+  const t=Math.max(0,Math.min(geom.tmax,(mx-geom.x0)/(geom.x1-geom.x0)*geom.tmax));
+  let i=0; while(i<lastRes.t.length-1 && lastRes.t[i]<t)i++;
+  $('cross').innerHTML=`t = <b>${t.toFixed(2)} h</b> &nbsp; neutral lipid <b style="color:var(--analyte)">${lastRes.neutral[i].toFixed(1)}%</b> &nbsp; bonds <b style="color:var(--bonds)">${lastRes.bonds[i].toFixed(1)}%</b> &nbsp; [OH⁻] <b style="color:var(--oh)">${lastRes.oh[i].toFixed(4)} M</b>`;
+  refresh(); // redraw base
+  const x=geom.px(t);
+  ctx.strokeStyle='rgba(234,242,241,.35)'; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(x,geom.y0); ctx.lineTo(x,geom.y1); ctx.stroke(); ctx.setLineDash([]);
+}
+cv.addEventListener('mousemove',hover);
+cv.addEventListener('touchmove',e=>{if(e.touches[0])hover(e.touches[0]);},{passive:true});
+
+// wire inputs
+['lipid','vol','koh','temp','mw','ea','kb','nexp','showDeg'].forEach(id=>{
+  $(id).addEventListener('input',()=>{ if(id==='kb')kbDefinedAtT=+$('temp').value; refresh(); });
+});
+refresh();
+</script>
+</body>
+</html>

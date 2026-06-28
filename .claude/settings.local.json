@@ -3,7 +3,12 @@
     "allow": [
       "PowerShell(gh --version)",
       "PowerShell(winget install --id GitHub.cli --silent --accept-package-agreements --accept-source-agreements)",
-      "PowerShell(gh auth status)"
+      "PowerShell(gh auth status)",
+      "PowerShell(cd C:\\\\Users\\\\Sam\\\\Documents\\\\BeachBio; git branch -m main; \\(Get-Command gh -ErrorAction SilentlyContinue\\) -ne $null)",
+      "PowerShell(winget list GitHub.cli 2>&1)",
+      "PowerShell(& \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" --version)",
+      "PowerShell(& \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth status 2>&1)",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Sam\\\\Documents\\\\BeachBio\\\\public\\\\tools\\\\saponification-timer\")"
     ]
   }
 }
