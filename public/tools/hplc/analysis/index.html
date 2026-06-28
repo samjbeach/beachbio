@@ -14,6 +14,9 @@
   td input { width: 80px; }
   /* µ uppercases to Greek Μ (looks like M) under header transform; keep units verbatim */
   th .u { text-transform: none; }
+  /* back-calc accuracy cell: green within tolerance, coral outside */
+  td.re-ok   { color: var(--ok); }
+  td.re-fail { color: var(--warn); font-weight: 600; }
   /* calibration plot */
   #plotWrap { margin-top: 14px; }
   #plot { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
@@ -71,11 +74,24 @@
   <!-- STEP 2: CALIBRATION -->
   <h2><span class="step">2</span>Calibration standards</h2>
   <table id="calTable">
-    <thead><tr><th>Std</th><th>Conc (<span class="u">µg/mL</span>)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th></tr></thead>
+    <thead><tr><th>Std</th><th>Conc (<span class="u">µg/mL</span>)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>%RE</th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="rowbtns"><button id="calAdd">+ row</button><button id="calDel">− row</button></div>
   <div class="summary" id="calSummary">Enter at least 3 standards with areas.</div>
+  <div id="reVerdict"></div>
+  <div class="note">
+    <b>Back-calculated accuracy is the acceptance test.</b> Each calibrator's ratio is run
+    back through the inverse fit and the predicted concentration compared to nominal:
+    <code>%RE = 100·(x<sub>pred</sub> − x<sub>nom</sub>)/x<sub>nom</sub></code>. The check is
+    <i>per level</i>, not pooled (FDA/EMA bioanalytical): every calibrator within
+    <b>±15%</b>, loosened to <b>±20% at the LLOQ</b> (lowest level). R² averages the low end
+    away — %RE exposes it, because down there a tiny absolute error is a large relative one.
+    Start <b>unweighted</b>, then try <b>1/x</b> and <b>1/x²</b> from the selector above and
+    keep the <i>lightest</i> weighting that lands every level inside tolerance (with ~2 orders
+    of magnitude you usually need some, but rarely the heaviest). Keep the model <b>linear</b>
+    unless the %RE column shows a systematic arc at the top — only then go quadratic.
+  </div>
 
   <!-- STEP 3: SPIKES -->
   <h2><span class="step">3</span>Matrix-matched spikes <span style="font-weight:400;color:var(--muted);font-size:12px">(diagnostic — do astaxanthin &amp; IS co-recover? only correct if they don't)</span></h2>
@@ -127,7 +143,7 @@
       <td><input type="number" class="c-conc" step="0.001" value="${conc??''}"></td>
       <td><input type="number" class="c-ax" step="1"></td>
       <td><input type="number" class="c-is" step="1"></td>
-      <td class="ro c-r">—</td></tr>`;
+      <td class="ro c-r">—</td><td class="ro c-re">—</td></tr>`;
   }
   function spkRow(i){
     return `<tr><td>${i+1}</td>
@@ -195,15 +211,17 @@
 
     // calibration
     const calRows=[...$('calTable').querySelectorAll('tbody tr')];
-    const xs=[],ys=[];
+    const xs=[],ys=[],fitPts=[];
     calRows.forEach(tr=>{
       const c=num(tr.querySelector('.c-conc').value);
       const ax=num(tr.querySelector('.c-ax').value);
       const is=num(tr.querySelector('.c-is').value);
       const rcell=tr.querySelector('.c-r');
+      const reCell=tr.querySelector('.c-re');
+      reCell.textContent='—'; reCell.className='ro c-re';
       let R=NaN;
       if(isFinite(ax)&&isFinite(is)&&is!==0){R=ax/is-blank; rcell.textContent=fmt(R,4);} else rcell.textContent='—';
-      if(isFinite(c)&&isFinite(R)){xs.push(c);ys.push(R);}
+      if(isFinite(c)&&isFinite(R)){xs.push(c);ys.push(R);fitPts.push({c,R,reCell});}
     });
 
     REG=null;
@@ -217,6 +235,35 @@
       if(REG.b1<=0) $('calSummary').innerHTML+=' <span class="warn">— non-positive slope; check areas.</span>';
     } else {
       $('calSummary').textContent='Enter at least 3 standards with concentration + both areas.';
+    }
+
+    // back-calculated accuracy (%RE) per level — the acceptance test (doc §1, §4).
+    // Run each calibrator's ratio back through the inverse fit, compare predicted
+    // concentration to nominal. Per level, not pooled: ±15%, ±20% at the LLOQ.
+    const reEl=$('reVerdict');
+    if(REG&&REG.b1>0&&fitPts.length){
+      const lloq=Math.min(...fitPts.map(p=>p.c));   // lowest level gets the looser tol
+      let nFail=0; const fails=[];
+      fitPts.forEach(p=>{
+        const xPred=predict(REG,p.R).x0;
+        const re=100*(xPred-p.c)/p.c;
+        const tol=(p.c===lloq)?20:15;
+        const pass=Math.abs(re)<=tol;
+        if(!pass){nFail++;fails.push(`${fmt(p.c,3)} µg/mL (${re>=0?'+':''}${fmt(re,1)}%)`);}
+        p.reCell.textContent=`${re>=0?'+':''}${fmt(re,1)}%`;
+        p.reCell.className='ro c-re '+(pass?'re-ok':'re-fail');
+      });
+      const tolTxt='±15% (±20% at LLOQ '+fmt(lloq,3)+' µg/mL)';
+      if(nFail===0){
+        reEl.className='verdict ok';
+        reEl.innerHTML=`<b>Back-calc accuracy: PASS.</b> All ${fitPts.length} calibrators within ${tolTxt} on <b>${mode}</b> weighting. This is the acceptance check.`;
+      } else {
+        reEl.className='verdict warn';
+        reEl.innerHTML=`<b>Back-calc accuracy: ${nFail} of ${fitPts.length} out of tolerance</b> (${tolTxt}) on <b>${mode}</b> weighting — ${fails.join(', ')}. `+
+          `Try heavier weighting (1/x → 1/x²); if only the top levels arc systematically, the fit needs to go quadratic.`;
+      }
+    } else {
+      reEl.className=''; reEl.innerHTML='';
     }
 
     // spikes
