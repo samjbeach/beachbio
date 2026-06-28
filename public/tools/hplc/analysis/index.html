@@ -12,6 +12,19 @@
   /* tool-specific tweaks only */
   .wrap { max-width: 1000px; }
   td input { width: 80px; }
+  /* µ uppercases to Greek Μ (looks like M) under header transform; keep units verbatim */
+  th .u { text-transform: none; }
+  /* calibration plot */
+  #plotWrap { margin-top: 14px; }
+  #plot { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  #plot .axis { stroke: var(--line); stroke-width: 1; }
+  #plot .grid { stroke: var(--line); stroke-width: 1; opacity: .35; }
+  #plot .fit { stroke: var(--accent); stroke-width: 2; fill: none; }
+  #plot .cal { fill: var(--accent); }
+  #plot .smp { fill: none; stroke: #e9b949; stroke-width: 1.6; }
+  #plot text { fill: var(--muted); font: 11px 'JetBrains Mono', monospace; }
+  #plot .axlbl { fill: var(--faint); font-size: 11px; }
+  #plotEmpty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
 </style>
 </head>
 <body>
@@ -23,20 +36,11 @@
   <!-- STEP 1: SETUP -->
   <h2><span class="step">1</span>Calibration setup</h2>
   <fieldset>
-    <legend>Import or generate concentrations</legend>
-    <div class="sub" style="margin:0 0 10px">Paste the prep-tool TSV (uses the <i>Target</i> column), a JSON array of concentrations, or just generate a series.</div>
-    <textarea id="importBox" placeholder="Paste TSV/JSON here, or use the generator below…"></textarea>
+    <legend>Import concentrations</legend>
+    <div class="sub" style="margin:0 0 10px">Paste the prep-tool TSV (uses the <i>Target</i> column), a JSON array of concentrations, or one number per line — or just type into the table below.</div>
+    <textarea id="importBox" placeholder="Paste TSV/JSON here, or type into the table below…"></textarea>
     <div class="rowbtns">
       <button id="importBtn">Load pasted data</button>
-    </div>
-    <div style="margin-top:12px" class="inline">
-      <label>n <input type="number" id="gen_n" value="6" min="2" step="1"></label>
-      <label>min (µg/mL) <input type="number" id="gen_min" value="0.1" step="0.01"></label>
-      <label>max (µg/mL) <input type="number" id="gen_max" value="10" step="0.1"></label>
-      <label>spacing
-        <select id="gen_spacing"><option value="lin">Linear</option><option value="log">Logarithmic</option></select>
-      </label>
-      <button id="genBtn">Generate series</button>
     </div>
     <div style="margin-top:12px" class="inline">
       <label>Regression weighting
@@ -54,7 +58,7 @@
   <!-- STEP 2: CALIBRATION -->
   <h2><span class="step">2</span>Calibration standards</h2>
   <table id="calTable">
-    <thead><tr><th>Std</th><th>Conc (µg/mL)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th></tr></thead>
+    <thead><tr><th>Std</th><th>Conc (<span class="u">µg/mL</span>)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="rowbtns"><button id="calAdd">+ row</button><button id="calDel">− row</button></div>
@@ -63,7 +67,7 @@
   <!-- STEP 3: SPIKES -->
   <h2><span class="step">3</span>Matrix-matched spikes <span style="font-weight:400;color:var(--muted);font-size:12px">(optional correction factor)</span></h2>
   <table id="spikeTable">
-    <thead><tr><th>Spike</th><th>Nominal (µg/mL)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Apparent (µg/mL)</th><th>Recovery %</th><th>Factor F</th></tr></thead>
+    <thead><tr><th>Spike</th><th>Nominal (<span class="u">µg/mL</span>)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Apparent (<span class="u">µg/mL</span>)</th><th>Recovery %</th><th>Factor F</th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="rowbtns"><button id="spkAdd">+ spike</button><button id="spkDel">− spike</button></div>
@@ -73,10 +77,18 @@
   <!-- STEP 4: SAMPLES -->
   <h2><span class="step">4</span>Samples</h2>
   <table id="sampleTable">
-    <thead><tr><th>Sample</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Conc (µg/mL)</th><th>95% CI</th><th></th></tr></thead>
+    <thead><tr><th>Sample</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Conc (<span class="u">µg/mL</span>)</th><th>95% CI</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="rowbtns"><button id="smpAdd">+ sample</button><button id="smpDel">− sample</button><button class="primary" id="copyBtn">Copy results (TSV)</button></div>
+
+  <!-- PLOT -->
+  <h2><span class="step">5</span>Calibration plot</h2>
+  <div id="plotWrap">
+    <svg id="plot" viewBox="0 0 760 420" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Calibration plot"></svg>
+    <div id="plotEmpty" hidden>Enter at least 3 standards with areas to draw the calibration line.</div>
+  </div>
+  <div class="sub" style="margin-top:8px"><span style="color:var(--accent)">●</span> calibration standards &amp; fitted line &nbsp;·&nbsp; <span style="color:#e9b949">◇</span> samples (placed on the line at their measured ratio)</div>
 
   <div class="note" id="methodNote">
     <b>What the interval means.</b> The 95% interval is the inverse-prediction interval from the calibration fit — it reflects how well the line is determined and where the sample falls on it, not replicate injection scatter (enter that separately if you have it). A sample whose ratio falls outside the calibrated range is extrapolation and is flagged. When correction is applied, the interval is an approximate combination of calibration and correction-factor uncertainty.
@@ -232,6 +244,7 @@
 
     // samples
     const smpRows=[...$('sampleTable').querySelectorAll('tbody tr')];
+    const samps=[];
     smpRows.forEach(tr=>{
       const ax=num(tr.querySelector('.m-ax').value);
       const is=num(tr.querySelector('.m-is').value);
@@ -250,16 +263,62 @@
       }
       cC.textContent=fmt(C,4); ciC.textContent=`${fmt(lo,4)} – ${fmt(hi,4)}`;
       if(p.x0<REG.xmin||p.x0>REG.xmax) fl.innerHTML='<span class="flag">extrap.</span>';
+      samps.push({C:p.x0,R});   // place on the line at its uncorrected predicted conc
     });
+
+    drawPlot(REG,xs,ys,samps);
   }
 
-  // ---- import / generate ----
-  function genSeries(n,a,b,mode){
-    const out=[]; if(n<2)return [a];
-    for(let i=0;i<n;i++){const f=i/(n-1);
-      out.push(mode==='log'&&a>0&&b>0?Math.exp(Math.log(a)+f*(Math.log(b)-Math.log(a))):a+f*(b-a));}
-    return out;
+  // ---- calibration plot ----
+  function niceTicks(lo,hi,n){const out=[];for(let i=0;i<=n;i++)out.push(lo+(hi-lo)*i/n);return out;}
+  function tickLbl(v){const a=Math.abs(v);if(a!==0&&(a<0.01||a>=10000))return v.toExponential(1);return parseFloat(v.toPrecision(3)).toString();}
+
+  function drawPlot(reg,calX,calY,samps){
+    const svg=$('plot'), empty=$('plotEmpty');
+    if(!reg||calX.length<2||!(reg.b1>0)){ svg.setAttribute('hidden',''); empty.hidden=false; return; }
+    svg.removeAttribute('hidden'); empty.hidden=true;
+
+    const W=760,H=420,mL=64,mR=22,mT=22,mB=52;
+    const pw=W-mL-mR, ph=H-mT-mB;
+    const sC=samps.map(s=>s.C).filter(isFinite), sR=samps.map(s=>s.R).filter(isFinite);
+    let xmin=0, xmax=Math.max(reg.xmax,...sC);
+    let ymin=Math.min(0,...calY,...sR), ymax=Math.max(...calY,...sR,reg.b0+reg.b1*xmax);
+    if(!(xmax>xmin)) xmax=xmin+1;
+    if(!(ymax>ymin)) ymax=ymin+1;
+    xmax+=(xmax-xmin)*0.05; ymax+=(ymax-ymin)*0.08;
+    const X=v=>mL+(v-xmin)/(xmax-xmin)*pw;
+    const Y=v=>mT+ph-(v-ymin)/(ymax-ymin)*ph;
+
+    const p=[];
+    // gridlines + ticks
+    niceTicks(xmin,xmax,5).forEach(t=>{
+      const x=X(t);
+      p.push(`<line class="grid" x1="${x}" y1="${mT}" x2="${x}" y2="${mT+ph}"/>`);
+      p.push(`<text x="${x}" y="${mT+ph+16}" text-anchor="middle">${tickLbl(t)}</text>`);
+    });
+    niceTicks(ymin,ymax,5).forEach(t=>{
+      const y=Y(t);
+      p.push(`<line class="grid" x1="${mL}" y1="${y}" x2="${mL+pw}" y2="${y}"/>`);
+      p.push(`<text x="${mL-8}" y="${y+4}" text-anchor="end">${tickLbl(t)}</text>`);
+    });
+    // axes
+    p.push(`<line class="axis" x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT+ph}"/>`);
+    p.push(`<line class="axis" x1="${mL}" y1="${mT+ph}" x2="${mL+pw}" y2="${mT+ph}"/>`);
+    // axis labels
+    p.push(`<text class="axlbl" x="${mL+pw/2}" y="${H-10}" text-anchor="middle">Concentration (µg/mL)</text>`);
+    p.push(`<text class="axlbl" transform="translate(16,${mT+ph/2}) rotate(-90)" text-anchor="middle">Ratio R (AUC ax / AUC IS)</text>`);
+    // fit line across the data span
+    p.push(`<line class="fit" x1="${X(xmin)}" y1="${Y(reg.b0+reg.b1*xmin)}" x2="${X(xmax)}" y2="${Y(reg.b0+reg.b1*xmax)}"/>`);
+    // calibration points
+    calX.forEach((c,i)=>{ if(isFinite(c)&&isFinite(calY[i])) p.push(`<circle class="cal" cx="${X(c)}" cy="${Y(calY[i])}" r="4"/>`); });
+    // sample points (diamonds)
+    samps.forEach(s=>{ if(isFinite(s.C)&&isFinite(s.R)){ const x=X(s.C),y=Y(s.R),d=5;
+      p.push(`<path class="smp" d="M${x} ${y-d} L${x+d} ${y} L${x} ${y+d} L${x-d} ${y} Z"/>`); }});
+
+    svg.innerHTML=p.join('');
   }
+
+  // ---- import ----
   function parseImport(text){
     text=text.trim(); if(!text)return null;
     try{const j=JSON.parse(text);
@@ -281,10 +340,6 @@
   $('importBtn').addEventListener('click',()=>{
     const c=parseImport($('importBox').value);
     if(!c){alert('Could not parse — expected a TSV with a Target/Conc column, a JSON array, or one number per line.');return;}
-    setRows('calTable',calRow,c.length,c); recompute();
-  });
-  $('genBtn').addEventListener('click',()=>{
-    const c=genSeries(+$('gen_n').value,+$('gen_min').value,+$('gen_max').value,$('gen_spacing').value);
     setRows('calTable',calRow,c.length,c); recompute();
   });
 
@@ -310,8 +365,8 @@
       .then(()=>{$('copyBtn').textContent='Copied ✓';setTimeout(()=>$('copyBtn').textContent='Copy results (TSV)',1500);});
   });
 
-  // initial state
-  setRows('calTable',calRow,genSeries(6,0.1,10,'lin').length,genSeries(6,0.1,10,'lin'));
+  // initial state — empty calibration rows to fill in or paste over
+  setRows('calTable',calRow,6);
   setRows('spikeTable',spkRow,1);
   setRows('sampleTable',smpRow,3);
   recompute();
