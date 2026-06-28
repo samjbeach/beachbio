@@ -1,9 +1,35 @@
 (function () {
   // ── Tool registry ────────────────────────────────────────────────────────
-  // Add an entry here whenever a new tool lands in /tools/.
-  const TOOLS = [
-    { label: "BSF saponification timer", path: "/tools/saponification-timer/" },
-    { label: "hello (test)",             path: "/tools/hello/" },
+  // Grouped by subfolder. To add a tool: drop it in /tools/<group>/<name>/,
+  // then add a { label, path } entry to the matching group below. The first
+  // group (heading: null) is the /tools root — tools that don't belong in a
+  // subfolder live there.
+  const GROUPS = [
+    {
+      heading: null,
+      tools: [
+        { label: "hello (test)", path: "/tools/hello/" },
+      ],
+    },
+    {
+      heading: "modelling",
+      tools: [
+        { label: "Saponification timer", path: "/tools/modelling/saponification-timer/" },
+      ],
+    },
+    {
+      heading: "HPLC",
+      tools: [
+        { label: "Standard prep", path: "/tools/hplc/standard-prep/" },
+        { label: "Analysis",      path: "/tools/hplc/analysis/" },
+      ],
+    },
+    {
+      heading: "reference",
+      tools: [
+        { label: "Style guide", path: "/tools/_template/" },
+      ],
+    },
   ];
 
   const COLLAPSED_KEY = "tool-nav-collapsed";
@@ -12,7 +38,7 @@
   const style = document.createElement("style");
   style.textContent = `
     :root {
-      --nav-w: 210px;
+      --nav-w: 220px;
       --nav-bg: #0a1a1c;
       --nav-border: #1e3e42;
       --nav-text: #8fb0ae;
@@ -44,12 +70,8 @@
     }
 
     /* collapsed: slide the whole sidebar off-screen, content reclaims full width */
-    body.nav-collapsed #tool-nav {
-      transform: translateX(-100%);
-    }
-    body.nav-collapsed {
-      margin-left: 0;
-    }
+    body.nav-collapsed #tool-nav { transform: translateX(-100%); }
+    body.nav-collapsed { margin-left: 0; }
 
     #tool-nav .nav-header {
       padding: 18px 14px 12px;
@@ -84,11 +106,33 @@
       white-space: nowrap;
     }
 
-    #tool-nav ul {
-      list-style: none;
-      margin: 10px 0 0;
-      padding: 0 8px 20px;
+    #tool-nav .nav-body {
+      padding: 8px 8px 20px;
     }
+
+    #tool-nav .nav-group { margin-top: 4px; }
+    #tool-nav .nav-group + .nav-group { margin-top: 14px; }
+
+    #tool-nav .nav-group-label {
+      font-family: var(--nav-mono);
+      font-size: 9.5px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: #3d6a6e;
+      padding: 0 8px 6px;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #tool-nav .nav-group-label::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--nav-border);
+    }
+
+    #tool-nav ul { list-style: none; margin: 0; padding: 0; }
 
     #tool-nav li a {
       display: block;
@@ -102,11 +146,7 @@
       transition: background .12s, color .12s;
       white-space: nowrap;
     }
-
-    #tool-nav li a:hover {
-      background: var(--nav-hover);
-      color: var(--nav-active);
-    }
+    #tool-nav li a:hover { background: var(--nav-hover); color: var(--nav-active); }
 
     #tool-nav li a.active {
       color: var(--nav-active);
@@ -115,7 +155,7 @@
       padding-left: 6px;
     }
 
-    /* close (collapse) button inside the sidebar header */
+    /* close / open buttons */
     .nav-btn {
       background: none;
       border: 1px solid var(--nav-border);
@@ -128,17 +168,11 @@
       padding: 3px 7px;
       transition: color .15s, border-color .15s, background .15s;
     }
-    .nav-btn:hover {
-      color: var(--nav-active);
-      border-color: var(--nav-accent);
-      background: var(--nav-hover);
-    }
+    .nav-btn:hover { color: var(--nav-active); border-color: var(--nav-accent); background: var(--nav-hover); }
 
-    /* floating "open" button — only visible when collapsed */
     #nav-open {
       position: fixed;
-      top: 14px;
-      left: 14px;
+      top: 14px; left: 14px;
       z-index: 99;
       opacity: 0;
       pointer-events: none;
@@ -152,7 +186,7 @@
       transform: translateX(0);
     }
 
-    /* collapse to top bar on small screens — toggle hidden, always shown */
+    /* collapse to top bar on small screens */
     @media (max-width: 700px) {
       #tool-nav {
         width: 100%;
@@ -160,30 +194,20 @@
         position: sticky;
         border-right: none;
         border-bottom: 1px solid var(--nav-border);
-        flex-direction: row;
-        align-items: center;
-        flex-wrap: wrap;
-        padding: 8px 12px;
-        gap: 4px;
         transform: none !important;
+        overflow: visible;
       }
-      #tool-nav .nav-header {
-        padding: 0;
-        border-bottom: none;
-        align-items: center;
-        gap: 12px;
-        flex-shrink: 0;
-      }
-      #tool-nav .nav-back { margin-bottom: 0; }
-      #tool-nav .nav-title { display: none; }
+      #tool-nav .nav-header { padding: 10px 12px; }
       #tool-nav .nav-btn { display: none; }
-      #tool-nav ul {
+      #tool-nav .nav-body {
         display: flex;
         flex-wrap: wrap;
-        gap: 2px;
-        margin: 0;
-        padding: 0;
+        gap: 4px 14px;
+        padding: 8px 12px;
       }
+      #tool-nav .nav-group, #tool-nav .nav-group + .nav-group { margin-top: 0; }
+      #tool-nav .nav-group-label { display: none; }
+      #tool-nav ul { display: flex; flex-wrap: wrap; gap: 2px; }
       body, body.nav-collapsed { margin-left: 0; }
       #nav-open { display: none; }
     }
@@ -193,9 +217,13 @@
   // ── Markup ───────────────────────────────────────────────────────────────
   const current = location.pathname.replace(/\/?$/, "/");
 
-  const items = TOOLS.map(t => {
-    const active = current === t.path ? ' class="active"' : "";
-    return `<li><a href="${t.path}"${active}>${t.label}</a></li>`;
+  const groupsHtml = GROUPS.map(g => {
+    const items = g.tools.map(t => {
+      const active = current === t.path ? ' class="active"' : "";
+      return `<li><a href="${t.path}"${active}>${t.label}</a></li>`;
+    }).join("");
+    const label = g.heading ? `<p class="nav-group-label">${g.heading}</p>` : "";
+    return `<div class="nav-group">${label}<ul>${items}</ul></div>`;
   }).join("");
 
   const nav = document.createElement("nav");
@@ -209,7 +237,7 @@
       </div>
       <button class="nav-btn" id="nav-close" aria-label="Hide sidebar" title="Hide sidebar">‹</button>
     </div>
-    <ul>${items}</ul>
+    <div class="nav-body">${groupsHtml}</div>
   `;
 
   const openBtn = document.createElement("button");
@@ -228,7 +256,6 @@
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
   }
 
-  // restore saved state (no transition flash on load)
   if (localStorage.getItem(COLLAPSED_KEY) === "1") {
     document.body.classList.add("nav-collapsed");
   }

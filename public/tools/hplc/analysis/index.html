@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HPLC Analysis — astaxanthin / IS calibration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tools/tool.css">
+<style>
+  /* tool-specific tweaks only */
+  .wrap { max-width: 1000px; }
+  td input { width: 80px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">HPLC · quantification</p>
+  <h1>HPLC analysis — astaxanthin via apo-carotenal IS</h1>
+  <p class="sub">Internal-standard calibration → optional matrix-spike correction → sample quantification with inverse-prediction 95% intervals.</p>
+
+  <!-- STEP 1: SETUP -->
+  <h2><span class="step">1</span>Calibration setup</h2>
+  <fieldset>
+    <legend>Import or generate concentrations</legend>
+    <div class="sub" style="margin:0 0 10px">Paste the prep-tool TSV (uses the <i>Target</i> column), a JSON array of concentrations, or just generate a series.</div>
+    <textarea id="importBox" placeholder="Paste TSV/JSON here, or use the generator below…"></textarea>
+    <div class="rowbtns">
+      <button id="importBtn">Load pasted data</button>
+    </div>
+    <div style="margin-top:12px" class="inline">
+      <label>n <input type="number" id="gen_n" value="6" min="2" step="1"></label>
+      <label>min (µg/mL) <input type="number" id="gen_min" value="0.1" step="0.01"></label>
+      <label>max (µg/mL) <input type="number" id="gen_max" value="10" step="0.1"></label>
+      <label>spacing
+        <select id="gen_spacing"><option value="lin">Linear</option><option value="log">Logarithmic</option></select>
+      </label>
+      <button id="genBtn">Generate series</button>
+    </div>
+    <div style="margin-top:12px" class="inline">
+      <label>Regression weighting
+        <select id="weighting">
+          <option value="none">None (OLS)</option>
+          <option value="1/x">1/x</option>
+          <option value="1/x2">1/x²</option>
+        </select>
+      </label>
+      <label>Matrix blank ratio R <span style="font-size:11px">(optional, subtracted)</span>
+        <input type="number" id="blankR" placeholder="0" step="0.0001"></label>
+    </div>
+  </fieldset>
+
+  <!-- STEP 2: CALIBRATION -->
+  <h2><span class="step">2</span>Calibration standards</h2>
+  <table id="calTable">
+    <thead><tr><th>Std</th><th>Conc (µg/mL)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="rowbtns"><button id="calAdd">+ row</button><button id="calDel">− row</button></div>
+  <div class="summary" id="calSummary">Enter at least 3 standards with areas.</div>
+
+  <!-- STEP 3: SPIKES -->
+  <h2><span class="step">3</span>Matrix-matched spikes <span style="font-weight:400;color:var(--muted);font-size:12px">(optional correction factor)</span></h2>
+  <table id="spikeTable">
+    <thead><tr><th>Spike</th><th>Nominal (µg/mL)</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Apparent (µg/mL)</th><th>Recovery %</th><th>Factor F</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="rowbtns"><button id="spkAdd">+ spike</button><button id="spkDel">− spike</button></div>
+  <div id="spikeVerdict"></div>
+  <label class="toggle" style="margin-top:10px"><input type="checkbox" id="applyCorr"> Apply mean correction factor to samples</label>
+
+  <!-- STEP 4: SAMPLES -->
+  <h2><span class="step">4</span>Samples</h2>
+  <table id="sampleTable">
+    <thead><tr><th>Sample</th><th>AUC astaxanthin</th><th>AUC IS</th><th>Ratio R</th><th>Conc (µg/mL)</th><th>95% CI</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="rowbtns"><button id="smpAdd">+ sample</button><button id="smpDel">− sample</button><button class="primary" id="copyBtn">Copy results (TSV)</button></div>
+
+  <div class="note" id="methodNote">
+    <b>What the interval means.</b> The 95% interval is the inverse-prediction interval from the calibration fit — it reflects how well the line is determined and where the sample falls on it, not replicate injection scatter (enter that separately if you have it). A sample whose ratio falls outside the calibrated range is extrapolation and is flagged. When correction is applied, the interval is an approximate combination of calibration and correction-factor uncertainty.
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const num=v=>{const x=parseFloat(v);return isFinite(x)?x:NaN;};
+  const fmt=(x,d=3)=>isFinite(x)?x.toFixed(d):'—';
+
+  // two-sided 95% t critical values
+  const T95={1:12.706,2:4.303,3:3.182,4:2.776,5:2.571,6:2.447,7:2.365,8:2.306,9:2.262,10:2.228,
+    11:2.201,12:2.179,13:2.160,14:2.145,15:2.131,16:2.120,17:2.110,18:2.101,19:2.093,20:2.086,
+    21:2.080,22:2.074,23:2.069,24:2.064,25:2.060,26:2.056,27:2.052,28:2.048,29:2.045,30:2.042};
+  function tcrit(nu){ if(nu<1) return NaN; if(nu<=30) return T95[nu]; return 1.96+(2.042-1.96)*30/nu; }
+
+  // ---- table row builders ----
+  function calRow(i,conc){
+    return `<tr><td>${i+1}</td>
+      <td><input type="number" class="c-conc" step="0.001" value="${conc??''}"></td>
+      <td><input type="number" class="c-ax" step="1"></td>
+      <td><input type="number" class="c-is" step="1"></td>
+      <td class="ro c-r">—</td></tr>`;
+  }
+  function spkRow(i){
+    return `<tr><td>${i+1}</td>
+      <td><input type="number" class="s-nom" step="0.001"></td>
+      <td><input type="number" class="s-ax" step="1"></td>
+      <td><input type="number" class="s-is" step="1"></td>
+      <td class="ro s-r">—</td><td class="ro s-app">—</td><td class="ro s-rec">—</td><td class="ro s-f">—</td></tr>`;
+  }
+  function smpRow(i){
+    return `<tr><td><input type="text" class="lbl m-lbl" value="S${i+1}"></td>
+      <td><input type="number" class="m-ax" step="1"></td>
+      <td><input type="number" class="m-is" step="1"></td>
+      <td class="ro m-r">—</td><td class="ro m-c">—</td><td class="ro m-ci">—</td><td class="ro m-flag"></td></tr>`;
+  }
+
+  function setRows(tbodySel, builder, count, data){
+    const tb=$(tbodySel).querySelector('tbody');
+    tb.innerHTML='';
+    for(let i=0;i<count;i++) tb.insertAdjacentHTML('beforeend', builder(i, data?data[i]:undefined));
+    bindInputs();
+  }
+  function rowCount(sel){ return $(sel).querySelectorAll('tbody tr').length; }
+  function addRow(sel,builder){ const tb=$(sel).querySelector('tbody'); tb.insertAdjacentHTML('beforeend',builder(rowCount(sel))); bindInputs(); recompute(); }
+  function delRow(sel){ const tb=$(sel).querySelector('tbody'); if(tb.lastElementChild){tb.removeChild(tb.lastElementChild); recompute();} }
+
+  function bindInputs(){
+    document.querySelectorAll('input').forEach(el=>{
+      if(!el._bound){ el.addEventListener('input',recompute); el._bound=true; }
+    });
+  }
+
+  // ---- weighted least squares ----
+  function wls(xs,ys,mode){
+    const n=xs.length;
+    const w=xs.map(x=> mode==='1/x'?1/Math.max(x,1e-9): mode==='1/x2'?1/Math.max(x*x,1e-12):1);
+    let Sw=0,Swx=0,Swy=0; for(let i=0;i<n;i++){Sw+=w[i];Swx+=w[i]*xs[i];Swy+=w[i]*ys[i];}
+    const xbar=Swx/Sw, ybar=Swy/Sw;
+    let Sxx=0,Sxy=0,Syy=0;
+    for(let i=0;i<n;i++){const dx=xs[i]-xbar,dy=ys[i]-ybar;Sxx+=w[i]*dx*dx;Sxy+=w[i]*dx*dy;Syy+=w[i]*dy*dy;}
+    const b1=Sxy/Sxx, b0=ybar-b1*xbar;
+    let sse=0; for(let i=0;i<n;i++){const e=ys[i]-(b0+b1*xs[i]);sse+=w[i]*e*e;}
+    const s2=sse/(n-2), r2=1-sse/Syy;
+    return {b0,b1,s:Math.sqrt(Math.max(s2,0)),n,Sw,xbar,Sxx,r2,mode,xmin:Math.min(...xs),xmax:Math.max(...xs)};
+  }
+  function predict(reg,R,m){
+    m=m||1;
+    const x0=(R-reg.b0)/reg.b1;
+    const w0= reg.mode==='1/x'?1/Math.max(x0,1e-9): reg.mode==='1/x2'?1/Math.max(x0*x0,1e-12):1;
+    const se=(reg.s/Math.abs(reg.b1))*Math.sqrt(1/(w0*m)+1/reg.Sw+(x0-reg.xbar)**2/reg.Sxx);
+    const t=tcrit(reg.n-2);
+    return {x0,se,t,lo:x0-t*se,hi:x0+t*se};
+  }
+
+  // ---- main recompute ----
+  let REG=null, FBAR=NaN, FREL=0, NSPK=0;
+
+  function recompute(){
+    const mode=$('weighting').value;
+    const blank=num($('blankR').value)||0;
+
+    // calibration
+    const calRows=[...$('calTable').querySelectorAll('tbody tr')];
+    const xs=[],ys=[];
+    calRows.forEach(tr=>{
+      const c=num(tr.querySelector('.c-conc').value);
+      const ax=num(tr.querySelector('.c-ax').value);
+      const is=num(tr.querySelector('.c-is').value);
+      const rcell=tr.querySelector('.c-r');
+      let R=NaN;
+      if(isFinite(ax)&&isFinite(is)&&is!==0){R=ax/is-blank; rcell.textContent=fmt(R,4);} else rcell.textContent='—';
+      if(isFinite(c)&&isFinite(R)){xs.push(c);ys.push(R);}
+    });
+
+    REG=null;
+    if(xs.length>=3){
+      REG=wls(xs,ys,mode);
+      const tc=tcrit(REG.n-2);
+      $('calSummary').innerHTML=
+        `<b>Fit:</b> R = ${fmt(REG.b1,4)}·C ${REG.b0>=0?'+':'−'} ${fmt(Math.abs(REG.b0),4)} `+
+        `&nbsp; <b>R²</b> ${fmt(REG.r2,5)} &nbsp; <b>resid. SE</b> ${fmt(REG.s,4)} &nbsp; `+
+        `<b>n</b> ${REG.n} &nbsp; <b>weighting</b> ${mode} &nbsp; <b>range</b> ${fmt(REG.xmin,2)}–${fmt(REG.xmax,2)} µg/mL &nbsp; t₀.₉₇₅(${REG.n-2})=${fmt(tc,3)}`;
+      if(REG.b1<=0) $('calSummary').innerHTML+=' <span class="warn">— non-positive slope; check areas.</span>';
+    } else {
+      $('calSummary').textContent='Enter at least 3 standards with concentration + both areas.';
+    }
+
+    // spikes
+    const spkRows=[...$('spikeTable').querySelectorAll('tbody tr')];
+    const Fs=[];
+    spkRows.forEach(tr=>{
+      const nom=num(tr.querySelector('.s-nom').value);
+      const ax=num(tr.querySelector('.s-ax').value);
+      const is=num(tr.querySelector('.s-is').value);
+      const rC=tr.querySelector('.s-r'),aC=tr.querySelector('.s-app'),recC=tr.querySelector('.s-rec'),fC=tr.querySelector('.s-f');
+      let R=NaN;
+      if(isFinite(ax)&&isFinite(is)&&is!==0){R=ax/is-blank;rC.textContent=fmt(R,4);} else {rC.textContent='—';}
+      if(REG&&isFinite(R)&&isFinite(nom)&&nom>0&&REG.b1>0){
+        const app=predict(REG,R).x0;
+        const rec=app/nom*100, F=nom/app;
+        aC.textContent=fmt(app,3); recC.textContent=fmt(rec,1); fC.textContent=fmt(F,3);
+        if(isFinite(F)&&F>0) Fs.push(F);
+      } else {aC.textContent='—';recC.textContent='—';fC.textContent='—';}
+    });
+
+    NSPK=Fs.length;
+    const vEl=$('spikeVerdict');
+    if(NSPK>=1){
+      FBAR=Fs.reduce((a,b)=>a+b,0)/NSPK;
+      const meanRec=100/FBAR;
+      if(NSPK>=2){
+        const sd=Math.sqrt(Fs.reduce((a,b)=>a+(b-FBAR)**2,0)/(NSPK-1));
+        const seF=sd/Math.sqrt(NSPK); FREL=seF/FBAR;
+        const tF=tcrit(NSPK-1), loF=FBAR-tF*seF, hiF=FBAR+tF*seF;
+        const oneInside=(loF<=1&&1<=hiF);
+        vEl.className='verdict '+(oneInside?'ok':'warn');
+        vEl.innerHTML=`Mean F = <b>${fmt(FBAR,3)}</b> (95% CI ${fmt(loF,3)}–${fmt(hiF,3)}), mean recovery <b>${fmt(meanRec,1)}%</b>, n=${NSPK}. `+
+          (oneInside
+            ? '1.0 lies within the CI — correction not statistically warranted.'
+            : 'CI excludes 1.0 — the IS is not fully compensating; correction is justified.');
+      } else {
+        FREL=0;
+        vEl.className='verdict warn';
+        vEl.innerHTML=`Single spike: F = <b>${fmt(FBAR,3)}</b>, recovery <b>${fmt(meanRec,1)}%</b>. No variance from one point — add ≥2 spikes to test against 1.0 and to propagate uncertainty.`;
+      }
+    } else { FBAR=NaN; FREL=0; vEl.className=''; vEl.innerHTML=''; }
+
+    const applyC=$('applyCorr').checked && isFinite(FBAR);
+
+    // samples
+    const smpRows=[...$('sampleTable').querySelectorAll('tbody tr')];
+    smpRows.forEach(tr=>{
+      const ax=num(tr.querySelector('.m-ax').value);
+      const is=num(tr.querySelector('.m-is').value);
+      const rC=tr.querySelector('.m-r'),cC=tr.querySelector('.m-c'),ciC=tr.querySelector('.m-ci'),fl=tr.querySelector('.m-flag');
+      let R=NaN; fl.innerHTML='';
+      if(isFinite(ax)&&isFinite(is)&&is!==0){R=ax/is-blank;rC.textContent=fmt(R,4);} else {rC.textContent='—';cC.textContent='—';ciC.textContent='—';return;}
+      if(!REG||REG.b1<=0){cC.textContent='—';ciC.textContent='—';return;}
+      const p=predict(REG,R);
+      let C=p.x0, lo=p.lo, hi=p.hi;
+      if(applyC){
+        C=p.x0*FBAR;
+        const relCal=p.se/p.x0;
+        const relTot=Math.sqrt(relCal*relCal+FREL*FREL);
+        const half=p.t*relTot*Math.abs(C);
+        lo=C-half; hi=C+half;
+      }
+      cC.textContent=fmt(C,4); ciC.textContent=`${fmt(lo,4)} – ${fmt(hi,4)}`;
+      if(p.x0<REG.xmin||p.x0>REG.xmax) fl.innerHTML='<span class="flag">extrap.</span>';
+    });
+  }
+
+  // ---- import / generate ----
+  function genSeries(n,a,b,mode){
+    const out=[]; if(n<2)return [a];
+    for(let i=0;i<n;i++){const f=i/(n-1);
+      out.push(mode==='log'&&a>0&&b>0?Math.exp(Math.log(a)+f*(Math.log(b)-Math.log(a))):a+f*(b-a));}
+    return out;
+  }
+  function parseImport(text){
+    text=text.trim(); if(!text)return null;
+    try{const j=JSON.parse(text);
+      if(Array.isArray(j))return j.map(Number).filter(isFinite);
+      if(j.concentrations)return j.concentrations.map(Number).filter(isFinite);
+      if(j.targets)return j.targets.map(Number).filter(isFinite);
+    }catch(e){}
+    const lines=text.split(/\r?\n/).filter(l=>l.trim());
+    const delim=text.includes('\t')?'\t':',';
+    let head=lines[0].split(delim).map(s=>s.trim().toLowerCase());
+    let col=head.findIndex(h=>h.includes('target')||h.includes('conc'));
+    let start=1;
+    if(col<0){col=0; start=isFinite(parseFloat(head[0]))?0:1;}
+    const out=[];
+    for(let i=start;i<lines.length;i++){const v=parseFloat(lines[i].split(delim)[col]); if(isFinite(v))out.push(v);}
+    return out.length?out:null;
+  }
+
+  $('importBtn').addEventListener('click',()=>{
+    const c=parseImport($('importBox').value);
+    if(!c){alert('Could not parse — expected a TSV with a Target/Conc column, a JSON array, or one number per line.');return;}
+    setRows('calTable',calRow,c.length,c); recompute();
+  });
+  $('genBtn').addEventListener('click',()=>{
+    const c=genSeries(+$('gen_n').value,+$('gen_min').value,+$('gen_max').value,$('gen_spacing').value);
+    setRows('calTable',calRow,c.length,c); recompute();
+  });
+
+  $('calAdd').addEventListener('click',()=>addRow('calTable',calRow));
+  $('calDel').addEventListener('click',()=>delRow('calTable'));
+  $('spkAdd').addEventListener('click',()=>addRow('spikeTable',spkRow));
+  $('spkDel').addEventListener('click',()=>delRow('spikeTable'));
+  $('smpAdd').addEventListener('click',()=>addRow('sampleTable',smpRow));
+  $('smpDel').addEventListener('click',()=>delRow('sampleTable'));
+  $('weighting').addEventListener('change',recompute);
+  $('applyCorr').addEventListener('change',recompute);
+
+  $('copyBtn').addEventListener('click',()=>{
+    const rows=[['Sample','AUC_ax','AUC_is','R','Conc_ug/mL','CI_lo','CI_hi']];
+    $('sampleTable').querySelectorAll('tbody tr').forEach(tr=>{
+      const ci=tr.querySelector('.m-ci').textContent.split('–').map(s=>s.trim());
+      rows.push([tr.querySelector('.m-lbl').value,
+        tr.querySelector('.m-ax').value,tr.querySelector('.m-is').value,
+        tr.querySelector('.m-r').textContent,tr.querySelector('.m-c').textContent,
+        ci[0]||'',ci[1]||'']);
+    });
+    navigator.clipboard.writeText(rows.map(r=>r.join('\t')).join('\n'))
+      .then(()=>{$('copyBtn').textContent='Copied ✓';setTimeout(()=>$('copyBtn').textContent='Copy results (TSV)',1500);});
+  });
+
+  // initial state
+  setRows('calTable',calRow,genSeries(6,0.1,10,'lin').length,genSeries(6,0.1,10,'lin'));
+  setRows('spikeTable',spkRow,1);
+  setRows('sampleTable',smpRow,3);
+  recompute();
+})();
+</script>
+<script src="/tools/nav.js"></script>
+</body>
+</html>

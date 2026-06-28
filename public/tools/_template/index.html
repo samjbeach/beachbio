@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool Template &amp; Style Guide — BeachBio</title>
+
+<!-- ── BeachBio tool head boilerplate ──────────────────────────────────────
+     Copy this whole <head> block when starting a new tool. The two webfonts
+     + tool.css give you the shared design language; add a small <style> block
+     below for anything specific to your tool.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tools/tool.css">
+<style>
+  /* tool-specific styles go here — keep it small; promote reusable patterns
+     into /tools/tool.css instead. */
+  .swatches { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+  .swatch-chip { width: 92px; }
+  .swatch-chip .box { height: 44px; border-radius: 8px; border: 1px solid var(--line); }
+  .swatch-chip .name { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ── Page header pattern ──────────────────────────────────────────── -->
+  <p class="eyebrow">category · short descriptor</p>
+  <h1>Tool title goes here</h1>
+  <p class="sub">One or two sentences on what the tool does and what the user
+    is expected to bring to it. Keep it to a couple of lines — detail belongs
+    in a <code>.note</code> further down.</p>
+
+  <!-- ── Palette reference ────────────────────────────────────────────── -->
+  <h2>Palette</h2>
+  <div class="panel">
+    <div class="swatches">
+      <div class="swatch-chip"><div class="box" style="background:var(--ground)"></div><div class="name">--ground</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--panel)"></div><div class="name">--panel</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--field)"></div><div class="name">--field</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--line)"></div><div class="name">--line</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--accent)"></div><div class="name">--accent</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--gold)"></div><div class="name">--gold</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--cyan)"></div><div class="name">--cyan</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--rose)"></div><div class="name">--rose</div></div>
+      <div class="swatch-chip"><div class="box" style="background:var(--ok)"></div><div class="name">--ok</div></div>
+    </div>
+    <p class="hint">Coral (<code>--accent</code>) is the only "primary" accent — use it
+      for the main action, the active state, and the single most important number on
+      screen. Gold / cyan / rose are for distinguishing data series.</p>
+  </div>
+
+  <!-- ── Forms: panel + grid + field-row ──────────────────────────────── -->
+  <h2><span class="step">1</span>Inputs</h2>
+  <div class="grid">
+    <div class="panel">
+      <h2>Stacked fields</h2>
+      <div class="field-row">
+        <label for="d1">Concentration <span class="unit">µg/mL</span></label>
+        <input type="number" id="d1" value="2.5" step="0.1">
+      </div>
+      <div class="two">
+        <div class="field-row">
+          <label for="d2">Volume <span class="unit">mL</span></label>
+          <input type="number" id="d2" value="30">
+        </div>
+        <div class="field-row">
+          <label for="d3">Temp <span class="unit">°C</span></label>
+          <input type="number" id="d3" value="37">
+        </div>
+      </div>
+      <div class="rowbtns">
+        <button class="preset">preset</button>
+        <button class="preset primary">primary action</button>
+      </div>
+      <p class="hint">Use <code>.field-row</code> for label-over-input. Wrap two in
+        <code>.two</code> for a side-by-side pair.</p>
+    </div>
+
+    <fieldset>
+      <legend>Fieldset variant <span class="legend-sub">(inline labels)</span></legend>
+      <div class="inline">
+        <label>n <input type="number" value="6"></label>
+        <label>min <input type="number" value="0.1" step="0.01"></label>
+        <label>spacing
+          <select><option>Linear</option><option>Logarithmic</option></select>
+        </label>
+      </div>
+      <div class="derived">Derived value: <b>123.4</b> µL</div>
+      <label class="toggle" style="margin-top:10px">
+        <input type="checkbox" checked> a checkbox toggle
+      </label>
+    </fieldset>
+  </div>
+
+  <!-- ── Tables ───────────────────────────────────────────────────────── -->
+  <h2><span class="step">2</span>Tables</h2>
+  <table>
+    <thead><tr><th>Item</th><th>Value</th><th>Derived</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>First</td><td><input type="number" value="100"></td><td class="ro">1.234</td><td class="ro">ok</td></tr>
+      <tr class="row-win"><td>Highlighted</td><td><input type="number" value="200"></td><td class="ro">2.468</td><td><span class="flag">flag</span></td></tr>
+      <tr class="flag"><td>Flagged row</td><td><input type="number" value="0"></td><td class="ro">—</td><td><span class="warn">warn</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Readouts & callouts ──────────────────────────────────────────── -->
+  <h2><span class="step">3</span>Readouts &amp; callouts</h2>
+
+  <div class="summary"><b>Summary line:</b> R = 0.9871·C + 0.0042 &nbsp; <b>R²</b> 0.9994 &nbsp; <b>n</b> 6</div>
+
+  <div class="verdict ok" style="margin-top:12px">A success / within-spec verdict.</div>
+  <div class="verdict warn">A warning / out-of-range verdict.</div>
+
+  <div class="note">
+    <b>Note callout.</b> Amber-keyed box for caveats, assumptions, and "read this
+    before trusting the numbers" context. This is where method limitations live.
+  </div>
+
+</div>
+
+<!-- ── Sidebar nav — keep this last, before </body> ──────────────────────── -->
+<script src="/tools/nav.js"></script>
+</body>
+</html>
