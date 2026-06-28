@@ -24,7 +24,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -35,4 +35,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pin to v4 — the action otherwise installs wrangler 3.x, which can't
+          # deploy the Static-Assets-only config (no Worker entry-point) and fails
+          # with "Missing entry-point". Keep in sync with package.json.
+          wranglerVersion: "4.105.0"
           command: deploy
