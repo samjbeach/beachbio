@@ -16,6 +16,10 @@
   fieldset input[type=number], fieldset select { width: 90px; flex: none; padding: 3px 6px; }
   fieldset .derived { margin-top: 6px; }
   table { margin-top: 18px; }
+  /* compact two-up columns inside a single fieldset */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; }
+  .cols .colhead { font-weight: 600; font-size: 12px; color: var(--text); margin: 2px 0 2px; }
+  .cols .derived { grid-column: span 1; }
 </style>
 </head>
 <body>
@@ -24,43 +28,34 @@
   <h1>HPLC standard preparation</h1>
   <p class="sub">Astaxanthin analyte + apo-carotenal internal standard, made up in MeOH. Concentrations derived from primary-stock absorbance via A<sup>1%</sup><sub>1cm</sub>.</p>
 
-  <div class="grid">
-    <!-- ANALYTE -->
-    <fieldset>
-      <legend>Astaxanthin <span class="legend-sub">(analyte)</span></legend>
-      <label>Measured absorbance<input type="number" id="ax_a" value="0.500" step="0.001"></label>
-      <label>Dilution factor for reading<input type="number" id="ax_df" value="30" step="1"></label>
-      <div class="derived">A<sup>1%</sup><sub>1cm</sub> 2100 · λ 478 nm · 1 cm. Primary stock: <b id="ax_stock">—</b> µg/mL</div>
-    </fieldset>
+  <!-- PRIMARY STOCKS -->
+  <fieldset>
+    <legend>Primary stocks <span class="legend-sub">(absorbance read in MeOH)</span></legend>
+    <div class="cols">
+      <div class="colhead">Astaxanthin <span class="legend-sub">(analyte)</span></div>
+      <div class="colhead">apo-carotenal <span class="legend-sub">(internal std)</span></div>
+      <label>Absorbance<input type="number" id="ax_a" value="0.500" step="0.001"></label>
+      <label>Absorbance<input type="number" id="is_a" value="0.500" step="0.001"></label>
+      <label>Dilution factor<input type="number" id="ax_df" value="30" step="1"></label>
+      <label>Dilution factor<input type="number" id="is_df" value="30" step="1"></label>
+      <div class="derived">A<sup>1%</sup><sub>1cm</sub> 2100 · λ 478 nm. Stock: <b id="ax_stock">—</b> µg/mL</div>
+      <div class="derived">A<sup>1%</sup><sub>1cm</sub> 2640 · λ 461 nm. Stock: <b id="is_stock">—</b> µg/mL</div>
+    </div>
+  </fieldset>
 
-    <!-- INTERNAL STANDARD -->
-    <fieldset>
-      <legend>apo-carotenal <span class="legend-sub">(internal standard)</span></legend>
-      <label>Measured absorbance<input type="number" id="is_a" value="0.500" step="0.001"></label>
-      <label>Dilution factor for reading<input type="number" id="is_df" value="30" step="1"></label>
-      <div class="derived">A<sup>1%</sup><sub>1cm</sub> 2640 · λ 461 nm · 1 cm. Primary stock: <b id="is_stock">—</b> µg/mL</div>
-    </fieldset>
-  </div>
-
-  <div class="grid" style="margin-top:16px">
-    <!-- SERIES -->
-    <fieldset>
-      <legend>Standard series <span class="legend-sub">(astaxanthin)</span></legend>
+  <!-- SERIES + IS LEVEL -->
+  <fieldset style="margin-top:16px">
+    <legend>Standard series <span class="legend-sub">(astaxanthin) + internal standard level</span></legend>
+    <div class="cols">
       <label>Final volume (mL)<input type="number" id="vfinal" value="1" step="0.1"></label>
       <label>Number of standards<input type="number" id="n" value="5" step="1" min="1"></label>
       <label>Lowest conc. (µg/mL)<input type="number" id="cmin" value="0.1" step="0.01"></label>
       <label>Highest conc. (µg/mL)<input type="number" id="cmax" value="10" step="0.1"></label>
       <label>Spacing<select id="spacing"><option value="lin">Linear</option><option value="log" selected>Logarithmic</option></select></label>
-    </fieldset>
-
-    <!-- IS LEVEL -->
-    <fieldset>
-      <legend>Internal standard level</legend>
-      <label>Target conc. in each std (µg/mL)<input type="number" id="is_target" value="1" step="0.1"></label>
-      <div class="derived">Held constant across all standards — a fixed volume of IS stock per vial.<br>Per-vial IS volume: <b id="is_vol">—</b> µL</div>
-      <label style="margin-top:10px">Min reliable pipette vol (µL) <span>warning threshold</span><input type="number" id="vmin" value="1" step="0.5"></label>
-    </fieldset>
-  </div>
+      <label>IS target conc. (µg/mL)<input type="number" id="is_target" value="1" step="0.1"></label>
+    </div>
+    <div class="derived">IS held constant across all standards — a fixed <b id="is_vol">—</b> µL of IS stock per vial.</div>
+  </fieldset>
 
   <table id="out">
     <thead>
@@ -83,8 +78,9 @@
   const AX = { e: 2100, l: 1 };   // astaxanthin: A1%1cm, path length (cm)
   const IS = { e: 2640, l: 1 };   // apo-carotenal: A1%1cm, path length (cm)
 
+  const VMIN = 1;  // min reliable pipette volume (µL) — fixed warning threshold
   const ids = ['ax_a','ax_df','is_a','is_df',
-               'vfinal','n','cmin','cmax','spacing','is_target','vmin'];
+               'vfinal','n','cmin','cmax','spacing','is_target'];
   ids.forEach(i => $(i).addEventListener('input', render));
 
   // C (µg/mL) = A / (E1% * L) * 10000 * DF   ; E1% is A of 1 g/100mL (=10 mg/mL) at 1 cm
@@ -124,7 +120,7 @@
     const vIS = isStock>0 ? isTarget*vfinal/isStock*1000 : NaN;  // µL, constant
     $('is_vol').textContent = sf(vIS);
 
-    const vmin = +$('vmin').value;
+    const vmin = VMIN;
     const concs = series(+$('n').value, +$('cmin').value, +$('cmax').value, $('spacing').value);
 
     const tb = $('out').querySelector('tbody');
