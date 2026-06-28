@@ -34,29 +34,31 @@
       z-index: 100;
       overflow-y: auto;
       overscroll-behavior: contain;
-      transition: width .2s ease, border-color .2s ease;
+      transform: translateX(0);
+      transition: transform .2s ease;
     }
 
     body {
-      margin-left: var(--nav-w) !important;
+      margin-left: var(--nav-w);
       transition: margin-left .2s ease;
     }
 
-    /* collapsed state */
-    #tool-nav.collapsed {
-      width: 36px;
-      overflow: hidden;
+    /* collapsed: slide the whole sidebar off-screen, content reclaims full width */
+    body.nav-collapsed #tool-nav {
+      transform: translateX(-100%);
     }
-    #tool-nav.collapsed ~ body,
     body.nav-collapsed {
-      margin-left: 36px !important;
+      margin-left: 0;
     }
 
     #tool-nav .nav-header {
       padding: 18px 14px 12px;
       border-bottom: 1px solid var(--nav-border);
       flex-shrink: 0;
-      min-width: var(--nav-w);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
     }
 
     #tool-nav .nav-back {
@@ -86,7 +88,6 @@
       list-style: none;
       margin: 10px 0 0;
       padding: 0 8px 20px;
-      min-width: var(--nav-w);
     }
 
     #tool-nav li a {
@@ -114,52 +115,47 @@
       padding-left: 6px;
     }
 
-    /* toggle button — sits at the bottom of the sidebar */
-    #nav-toggle {
-      position: fixed;
-      bottom: 14px;
-      left: 0;
-      width: var(--nav-w);
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 0 14px;
+    /* close (collapse) button inside the sidebar header */
+    .nav-btn {
       background: none;
-      border: none;
+      border: 1px solid var(--nav-border);
+      border-radius: 5px;
+      color: var(--nav-text);
       cursor: pointer;
       font-family: var(--nav-mono);
-      font-size: 10.5px;
-      color: #3d6a6e;
-      transition: color .15s, width .2s ease;
-      white-space: nowrap;
-      z-index: 101;
-    }
-    #nav-toggle:hover { color: var(--nav-text); }
-
-    #nav-toggle .toggle-icon {
-      font-size: 13px;
+      font-size: 14px;
       line-height: 1;
-      flex-shrink: 0;
-      transition: transform .2s ease;
+      padding: 3px 7px;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .nav-btn:hover {
+      color: var(--nav-active);
+      border-color: var(--nav-accent);
+      background: var(--nav-hover);
     }
 
-    /* collapsed: shrink button width to match rail, flip icon */
-    #tool-nav.collapsed + #nav-toggle {
-      width: 36px;
-      padding: 0;
-      justify-content: center;
+    /* floating "open" button — only visible when collapsed */
+    #nav-open {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 99;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-8px);
+      transition: opacity .2s ease, transform .2s ease;
+      background: var(--nav-bg);
     }
-    #tool-nav.collapsed + #nav-toggle .toggle-icon {
-      transform: rotate(180deg);
-    }
-    #tool-nav.collapsed + #nav-toggle .toggle-label {
-      display: none;
+    body.nav-collapsed #nav-open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
     }
 
-    /* collapse to top bar on small screens */
+    /* collapse to top bar on small screens — toggle hidden, always shown */
     @media (max-width: 700px) {
       #tool-nav {
-        width: 100% !important;
+        width: 100%;
         height: auto;
         position: sticky;
         border-right: none;
@@ -169,29 +165,27 @@
         flex-wrap: wrap;
         padding: 8px 12px;
         gap: 4px;
-        overflow: visible;
+        transform: none !important;
       }
       #tool-nav .nav-header {
         padding: 0;
         border-bottom: none;
-        display: flex;
         align-items: center;
         gap: 12px;
         flex-shrink: 0;
-        min-width: 0;
       }
       #tool-nav .nav-back { margin-bottom: 0; }
       #tool-nav .nav-title { display: none; }
+      #tool-nav .nav-btn { display: none; }
       #tool-nav ul {
         display: flex;
         flex-wrap: wrap;
         gap: 2px;
         margin: 0;
         padding: 0;
-        min-width: 0;
       }
-      body { margin-left: 0 !important; }
-      #nav-toggle { display: none; }
+      body, body.nav-collapsed { margin-left: 0; }
+      #nav-open { display: none; }
     }
   `;
   document.head.appendChild(style);
@@ -209,31 +203,36 @@
   nav.setAttribute("aria-label", "Tools navigation");
   nav.innerHTML = `
     <div class="nav-header">
-      <a class="nav-back" href="/tools/">← tools</a>
-      <p class="nav-title">tools</p>
+      <div>
+        <a class="nav-back" href="/tools/">← tools</a>
+        <p class="nav-title">tools</p>
+      </div>
+      <button class="nav-btn" id="nav-close" aria-label="Hide sidebar" title="Hide sidebar">‹</button>
     </div>
     <ul>${items}</ul>
   `;
 
-  const toggle = document.createElement("button");
-  toggle.id = "nav-toggle";
-  toggle.setAttribute("aria-label", "Toggle sidebar");
-  toggle.innerHTML = `<span class="toggle-icon">‹</span><span class="toggle-label">hide</span>`;
+  const openBtn = document.createElement("button");
+  openBtn.id = "nav-open";
+  openBtn.className = "nav-btn";
+  openBtn.setAttribute("aria-label", "Show sidebar");
+  openBtn.title = "Show sidebar";
+  openBtn.textContent = "›";
 
   document.body.insertBefore(nav, document.body.firstChild);
-  nav.insertAdjacentElement("afterend", toggle);
+  document.body.appendChild(openBtn);
 
   // ── Collapse logic ───────────────────────────────────────────────────────
   function setCollapsed(collapsed) {
-    nav.classList.toggle("collapsed", collapsed);
-    document.body.style.marginLeft = collapsed ? "36px" : "";
+    document.body.classList.toggle("nav-collapsed", collapsed);
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
   }
 
-  // restore saved state
-  setCollapsed(localStorage.getItem(COLLAPSED_KEY) === "1");
+  // restore saved state (no transition flash on load)
+  if (localStorage.getItem(COLLAPSED_KEY) === "1") {
+    document.body.classList.add("nav-collapsed");
+  }
 
-  toggle.addEventListener("click", () => {
-    setCollapsed(!nav.classList.contains("collapsed"));
-  });
+  document.getElementById("nav-close").addEventListener("click", () => setCollapsed(true));
+  openBtn.addEventListener("click", () => setCollapsed(false));
 })();
