@@ -155,8 +155,9 @@
       if(problem) tr.className='flag';
       if(msgs.length) flags.push(`Std ${i+1} (${sf(c)} µg/mL): ${msgs.join('; ')}`);
 
-      const meOHcell = (isFinite(vMeOH)&&vMeOH<0) ? `<span class="warn">${sf(vMeOH)}</span>` : sf(vMeOH);
-      tr.innerHTML = `<td>${i+1}</td><td>${sf(c)}</td><td>${sf(vAx)}</td><td>${sf(vIS)}</td><td>${meOHcell}</td>`;
+      // Fixed dp per column so decimals align: target 2 dp, ax/IS 1 dp, MeOH 0 dp.
+      const meOHcell = (isFinite(vMeOH)&&vMeOH<0) ? `<span class="warn">${fmt(vMeOH,0)}</span>` : fmt(vMeOH,0);
+      tr.innerHTML = `<td>${i+1}</td><td>${fmt(c,2)}</td><td>${fmt(vAx,1)}</td><td>${fmt(vIS,1)}</td><td>${meOHcell}</td>`;
       tb.appendChild(tr);
     });
 
@@ -164,9 +165,9 @@
     const tf = $('out').querySelector('tfoot');
     const axOver = isFinite(totAx) && totAx>TOTAL_MAX;
     const isOver = isFinite(totIS) && totIS>TOTAL_MAX;
-    const totCell = (v,over) => over ? `<span class="warn">${sf(v)}</span>` : sf(v);
+    const totCell = (v,over,d) => over ? `<span class="warn">${fmt(v,d)}</span>` : fmt(v,d);
     tf.innerHTML = concs.length
-      ? `<tr class="total"><th colspan="2">Total (µL)</th><td>${totCell(totAx,axOver)}</td><td>${totCell(totIS,isOver)}</td><td>${sf(totMeOH)}</td></tr>`
+      ? `<tr class="total"><th colspan="2">Total (µL)</th><td>${totCell(totAx,axOver,1)}</td><td>${totCell(totIS,isOver,1)}</td><td>${fmt(totMeOH,0)}</td></tr>`
       : '';
     if(axOver) flags.push(`Total astaxanthin ${sf(totAx)} µL exceeds ${TOTAL_MAX} µL — split the batch or use a more concentrated stock`);
     if(isOver) flags.push(`Total IS (apo-carotenal) ${sf(totIS)} µL exceeds ${TOTAL_MAX} µL — split the batch or use a more concentrated stock`);
