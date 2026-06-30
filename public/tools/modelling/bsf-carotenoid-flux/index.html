@@ -232,6 +232,9 @@
     <b>What this is for.</b> A shared back-of-envelope for spotting where flux gets stuck and which enzymes to
     add or boost — for people who don't live in this pathway day to day. It is <b>relative and in arbitrary
     units</b>: trust the <i>direction</i> of changes and the bottleneck ranking, not the absolute numbers.
+    <b>Building on this model?</b> Open the write-up below and read <b>"⚠ Known gaps — where the expert should
+    dig"</b> first: an honest, prioritised list of where it's most abstracted and which fixes would make it
+    predictive.
   </div>
 
   <details class="foldsec" id="docs"><summary>Open the full write-up + parameter table</summary>
@@ -279,10 +282,17 @@ const V = {
   thiolase:2.5, hmgr:1.2, mva:1.2, ck:1.5, idi:3.0, fpps:2.0, ggn:1.5, saF:1.5, saD:1.5,
   psy:1.0, carb:0.5, lcy:0.45, crtwz:0.4,
 };
+// ⚠ DEEP-RESEARCH (gap A1): KM.gen is a single generic Km standing in for nearly every prenyl step — the
+// biggest single source of non-predictiveness. Real Km values span orders of magnitude and decide which
+// steps saturate. Replacing even 2–3 with measured values (+ one absolute anchor) would calibrate the rest.
 const KM = { gen:1.0, ck_prenol:5.0, ck_iso:2.0 };
 const LCY = { Km:2.0, Ki_WT:1.5, Ki_Y27R:1e6 };  // cyclase substrate inhibition v=V·L/(Km+L+L²/Ki)
 const SINK = { squalene:2.0 };
+// ⚠ DEEP-RESEARCH (gap A3): K_DIL is a numerical device (first-order turnover) so end-products reach a steady
+// state — NOT biology. It makes the end-product POOLS semi-arbitrary; trust the flux to product, not the pool.
 const K_DIL = 0.05;
+// ⚠ DEEP-RESEARCH (gap A4): feedback is a cartoon — FPP as the sole signal, only on native enzymes. Whether
+// BSF MVA has real product feedback (and via farnesol/JH/sterol?) is open and sets how much "pull" helps.
 const FB_REF = 0.10;   // FPP scale at which native feedback bites
 
 // Native expression defaults by host (the "from data" baseline; editable per enzyme).
@@ -366,9 +376,14 @@ function rates(x, P){
   r.fpps2 = bi(GPP,IPP,   E('fpps')*V.fpps, Kg,Kg);            // → FPP
   r.ggn = bi(FPP,IPP, E('ggpps_native')*V.ggn, Kg,Kg);
   r.saF = bi(FPP,IPP, E('saggpps')*V.saF, Kg,Kg);
+  // ⚠ DEEP-RESEARCH (gap B1): GGPP = DMAPP + 3 IPP via 3 sequential condensations. The IPP balance below
+  // subtracts 3*r.saD (stoichiometry correct), but this rate law is only FIRST-order in IPP — it understates
+  // how hard this flux leans on the IPP pool. Consider IPP^n, or modelling the 3 condensations explicitly.
   r.saD = (STATE.saggpps_dmapp?1:0)*bi(DMAPP,IPP, E('saggpps')*V.saD, Kg,Kg);  // DMAPP + 3 IPP → GGPP
   r.dol=P.k_dolichol*FPP; r.coq=P.k_CoQ*FPP; r.farn=Math.max(P.k_farn,0.01)*FPP;
   r.squal=P.squalene_on?SINK.squalene*FPP:0; r.ggpren=Math.max(P.k_ggpren,0.01)*GGPP;
+  // ⚠ DEEP-RESEARCH (gap B2): consumes 2 GGPP but rate is first-order in GGPP, not second — understates
+  // sensitivity to GGPP depletion. ⚠ (gap B5) PSY/cyclase kcat ratio (V.psy:V.lcy) is tuned, not measured.
   r.psy = mm(GGPP, E('carrp')*V.psy, Kg);                      // 2 GGPP → phytoene
   r.carb= mm(PHY, E('carb')*V.carb, Kg);
   const Ki = STATE.enzymes.carrp.variant==='WT' ? LCY.Ki_WT : LCY.Ki_Y27R;
@@ -818,6 +833,81 @@ document.getElementById('docsBody').innerHTML = `
   <p>HMGR costs 2 NADPH per mevalonate; the lower MVA costs 3 ATP per IPP; the IUP costs ~2 ATP per isopentenol
   and <b>no NADPH</b> (its main thermodynamic advantage); astaxanthin costs O₂ + reductant. The cost panel sums
   these for the running pathway so you can see the IUP's lower reductant burden vs MVA.</p>
+
+  <h3 style="color:var(--accent)">⚠ Known gaps — where the expert should dig</h3>
+  <p>I've taken this as far as I usefully can without real numbers. Here is an honest map of where the model is
+  most abstracted from reality and where the assumptions are shakiest, roughly ordered by how much they affect
+  the conclusions. This is the deep-research to-do list — the items near the top are the ones that would move it
+  from "a step above a toy" toward something predictive.</p>
+
+  <p style="color:var(--ink)"><b>A · Load-bearing assumptions (these most affect what the model concludes)</b></p>
+  <ol>
+    <li><b>No anchor to real units.</b> Everything is relative, and a single generic Km (≈1) stands in for
+      nearly every prenyl step. The model ranks bottlenecks and shows the direction of a change, but it cannot
+      predict a titre — or even the true order of magnitude of a pool. <i>Highest-value first move:</i> pin a
+      handful of real Km/kcat values and one absolute anchor (a measured pool or titre), then let the rest
+      calibrate off them.</li>
+    <li><b>Sterol auxotrophy / no squalene sink.</b> The whole "BSF should out-convert yeast per unit push"
+      conclusion rests on insects lacking the squalene→sterol drain and its feedback. Confirm BSF truly lacks
+      squalene synthase (vs only the downstream sterol enzymes), and quantify the <i>other</i> native FPP/GGPP
+      demands — dolichol, ubiquinone, prenylation, and especially the <b>juvenile-hormone / farnesol branch,
+      which I don't model at all</b> and which could be a real, developmentally-regulated FPP sink in fat body.</li>
+    <li><b>End-product <i>pools</i> are semi-arbitrary.</b> A first-order growth-dilution term (0.05 on every
+      species) is a numerical device so end-products reach a steady state — it is not biology. <b>Trust the
+      flux to product, not the steady-state pool of product.</b> Real β-carotene/astaxanthin accumulate over
+      development; read the product-pool bars only as "is flux getting through," never as a titre.</li>
+    <li><b>Feedback / push–pull is a cartoon.</b> FPP is the sole feedback signal (Hill n=2, arbitrary
+      threshold), acting only on native enzymes. Whether BSF MVA has meaningful product feedback at all — and
+      via what (farnesol? JH? a sterol sensor it may not even have?) — is open, and it sets how much downstream
+      pull actually helps.</li>
+  </ol>
+
+  <p style="color:var(--ink)"><b>B · Kinetic &amp; stoichiometric abstractions (affect which step looks limiting)</b></p>
+  <ol>
+    <li><b>SaGGPPs DMAPP-direct route &amp; the 3×IPP question (you flagged this — it's a real one).</b> GGPP
+      (C20) = DMAPP + 3 IPP via three sequential condensations. The model books the stoichiometry correctly (it
+      subtracts 3·flux from the IPP balance) but the <i>rate law</i> is only first-order-saturating in IPP (a
+      lumped bisubstrate Michaelis–Menten), so it <b>understates how hard that flux leans on the IPP pool.</b>
+      In reality, sustaining the DMAPP-direct route needs IPP in genuine excess and IPP can become co-limiting
+      in a way the current law softens; the enzyme-bound GPP/FPP intermediates aren't represented either.
+      Raising IPP's effective kinetic order (or modelling the three condensations explicitly) is one of the
+      highest-value upgrades — and it couples tightly to the IDI question, since IDI sets the DMAPP:IPP split
+      this route depends on.</li>
+    <li><b>2 GGPP → phytoene is first-order in GGPP, not second.</b> Phytoene synthase condenses two GGPP; the
+      model consumes 2 but the rate saturates with GGPP to the first power, so phytoene synthesis is
+      <i>less</i> sensitive to GGPP depletion than reality (same under-modelled cooperativity as the point
+      above).</li>
+    <li><b>Lumped multi-step reactions hide internal bottlenecks.</b> Thiolase+HMGS, MVK·PMK·MVD, and
+      especially <b>CarB (four desaturations: phytoene → phytofluene → ζ-carotene → neurosporene → lycopene)</b>
+      are each one step. If the true bottleneck is a single desaturation or an intermediate piling up, this
+      model can't see it — it just reports "CarB slow."</li>
+    <li><b>IDI Keq and its rate law.</b> Keq = 0.25 (DMAPP/IPP) is a mid-confidence guess and the reversible
+      form is simplified. Since IDI is the flagged key unknown <i>and</i> the DMAPP-direct route hangs on it,
+      both the value and the form deserve real kinetics.</li>
+    <li><b>CarRP domain ratio is invented.</b> The PSY:cyclase turnover ratio (1.0 : 0.45) is tuned to make the
+      yeast validation behave, not measured — yet it sets where carotenoid flux sits relative to the cyclase
+      choke. Replace with literature/measured values.</li>
+  </ol>
+
+  <p style="color:var(--ink)"><b>C · Structural simplifications</b></p>
+  <ol>
+    <li><b>One well-mixed compartment.</b> Carotenogenesis is membrane/lipid-droplet-bound; phytoene and
+      lycopene are lipophilic and their "concentration" — and the cyclase's access to them — is spatial. The
+      cyclase Km/Ki are in relative units for exactly this reason, and CrtW-Z "accessibility" is a crude
+      stand-in for partitioning. A spatial/partitioning layer is the big structural upgrade if you want
+      quantitative astaxanthin.</li>
+    <li><b>Cofactors are reported, not enforced.</b> ATP/NADPH/O₂ are summed for insight but never constrain
+      flux — a scenario can demand impossible NADPH and the model won't push back. If reductant supply is a real
+      ceiling (it often is for HMGR-heavy pushes), it needs to become an actual constraint.</li>
+    <li><b>Lipogenesis competition is a one-line ratio.</b> No real acetyl-CoA pool, no NADPH sharing, no
+      developmental staging. Illustrative only.</li>
+    <li><b>IUP kinetics are the most extrapolated thing here.</b> CK/IPK lumped, "need both" enforced by a
+      min(), no monophosphate intermediate, alcohol Km and prenol-vs-isoprenol selectivity guessed, ATP drain
+      not enforced. Directional at best — this is where a literature pass would help most for the IUP-vs-MVA
+      decision.</li>
+    <li><b>Steady state vs a moving target.</b> Fat-body expression, feeding, and demand all change across
+      instars; steady state approximates a single snapshot of a developing animal.</li>
+  </ol>
 
   <p style="color:var(--faint);font-size:11.5px">Steady state solved directly (dC/dt=0) by damped Newton with a
   finite-difference Jacobian (11 species); leverage bars are ±1% finite-difference flux-control coefficients.
