@@ -8,7 +8,8 @@
     {
       heading: "modelling",
       tools: [
-        { label: "Saponification timer", path: "/tools/modelling/saponification-timer/" },
+        { label: "Saponification timer",  path: "/tools/modelling/saponification-timer/" },
+        { label: "BSF carotenoid flux",   path: "/tools/modelling/bsf-carotenoid-flux/" },
       ],
     },
     {

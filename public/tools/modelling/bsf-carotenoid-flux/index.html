@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BSF carotenoid flux model — BeachBio</title>
+
+<!-- shared BeachBio design system (dark teal theme) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* tool-specific: flux map + slider rows + tiny div bar-charts */
+  .topbar { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:flex-end; }
+  .topbar label { display:flex; flex-direction:column; gap:4px; }
+  .topbar select { min-width:130px; }
+
+  .mapwrap { background:var(--field); border:1px solid var(--line); border-radius:10px; padding:6px; margin-top:10px; overflow-x:auto; }
+  svg.flux { display:block; width:100%; min-width:760px; height:auto; }
+  .node-lab { font-family:var(--mono); font-size:10.5px; fill:var(--ink); }
+  .node-val { font-family:var(--mono); font-size:9px; fill:var(--faint); }
+  .edge { stroke:var(--muted); fill:none; stroke-linecap:round; opacity:.85; }
+  .edge.grey { stroke:#1f3a3d; opacity:.6; }
+  .edge.dash { stroke-dasharray:5 4; }
+
+  /* slider rows */
+  .sliders { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; }
+  @media (max-width:760px){ .sliders{ grid-template-columns:1fr; } }
+  .srow { display:grid; grid-template-columns:1fr 132px 56px; align-items:center; gap:8px; }
+  .srow > label { font-size:11.5px; color:var(--muted); }
+  .srow.key > label { color:var(--accent); font-weight:600; }
+  .srow input[type=range]{ width:100%; accent-color:var(--accent); }
+  .srow .sval { font-family:var(--mono); font-size:11.5px; color:var(--ink); text-align:right; }
+  .srow .tip { cursor:help; border-bottom:1px dotted var(--faint); }
+  .conf { font-family:var(--mono); font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; padding:1px 4px; border-radius:4px; margin-left:5px; }
+  .conf.low{ color:var(--warn); border:1px solid rgba(242,103,75,.4);} .conf.med{ color:var(--gold); border:1px solid rgba(224,164,92,.4);} .conf.high{ color:var(--ok); border:1px solid rgba(111,191,154,.4);}
+
+  /* div bar charts */
+  .bars { display:flex; flex-direction:column; gap:4px; font-family:var(--mono); font-size:11px; }
+  .bar { display:grid; grid-template-columns:96px 1fr 58px; align-items:center; gap:8px; }
+  .bar .track { position:relative; height:14px; background:var(--inputbg); border-radius:3px; }
+  .bar .fill { position:absolute; top:0; bottom:0; left:50%; background:var(--cyan); border-radius:3px; }
+  .bar .fill.pos{ background:var(--ok);} .bar .fill.neg{ background:var(--warn);}
+  .bar .name { color:var(--muted); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar .num { color:var(--ink); text-align:right; }
+  .axis0 { position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--faint); }
+
+  .diag { display:flex; flex-direction:column; gap:8px; }
+  .presetbtns { display:flex; flex-wrap:wrap; gap:6px; }
+  details.prov { margin-top:8px; }
+  details.prov summary { cursor:pointer; font-size:11px; color:var(--faint); font-family:var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">modelling · isoprenoid pathway</p>
+  <h1>BSF carotenoid flux model</h1>
+  <p class="sub">Interactive steady-state flux map of the isoprenoid&nbsp;→&nbsp;carotenoid pathway as it
+    would run in black soldier fly (<i>Hermetia illucens</i>) fat body. Tune enzyme expression and watch
+    flux redistribute. <b>This is a thinking-aid for spotting bottlenecks — not a titre predictor.</b>
+    Insect defaults are relative-to-yeast guesses; flux is in arbitrary relative units / h.</p>
+
+  <!-- ── Top controls ─────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="topbar">
+      <label>organism mode
+        <select id="organism_mode"><option value="insect">insect (BSF)</option><option value="yeast">yeast (validation)</option></select></label>
+      <label>cyclase variant
+        <select id="cyclase_variant"><option value="WT">WT</option><option value="Y27R">Y27R (low-inhibition)</option><option value="Y27A">Y27A (unvalidated → WT)</option></select></label>
+      <label>astaxanthin
+        <select id="astax_enabled"><option value="0">off</option><option value="1">on (CrtW-Z)</option></select></label>
+      <label>fat-body coupling
+        <select id="couple_lipogenesis"><option value="0">off</option><option value="1">on (lipogenesis)</option></select></label>
+    </div>
+    <div class="presetbtns" style="margin-top:12px">
+      <span style="font-size:11px;color:var(--faint);font-family:var(--mono);align-self:center">presets:</span>
+      <button class="preset" data-preset="yeast">1 · yeast validation</button>
+      <button class="preset" data-preset="bsf">2 · BSF baseline</button>
+      <button class="preset" data-preset="construct">3 · current construct</button>
+      <button class="preset" data-preset="thmgr">4 · + tHMGR</button>
+      <button class="preset" data-preset="prenol">5 · + prenol feed</button>
+      <button class="preset" data-preset="astax">6 · + astaxanthin</button>
+      <button class="preset" data-preset="reset">reset</button>
+      <button class="preset" id="copylink">copy link</button>
+    </div>
+  </div>
+
+  <!-- ── Flux map ─────────────────────────────────────────────────────── -->
+  <h2><span class="step">1</span>Flux map</h2>
+  <p class="hint">Edge width ∝ steady-state flux · node size ∝ pool size. The squalene/sterol branch is greyed in insect mode (insects lack it). Dashed = SaGGPPs DMAPP-direct route.</p>
+  <div class="mapwrap"><svg class="flux" id="map" viewBox="0 0 980 600" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.2" orient="auto">
+      <path d="M0,0 L6,3.2 L0,6.4 Z" fill="var(--muted)"/></marker></defs>
+    <g id="edges"></g><g id="nodes"></g>
+  </svg></div>
+
+  <!-- ── Secondary panels ─────────────────────────────────────────────── -->
+  <div class="grid" style="margin-top:8px">
+    <div class="panel">
+      <h2>Flux control coefficients — <span id="fccTarget">β-carotene</span></h2>
+      <div class="bars" id="fccBars"></div>
+      <div class="derived">ΣFCC = <b id="fccSum">—</b> <span style="color:var(--faint)">(summation theorem → ≈1; feeds/sinks/dilution carry the remainder)</span></div>
+    </div>
+    <div class="panel">
+      <h2>Pool sizes</h2>
+      <div class="bars" id="poolBars"></div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="panel">
+      <h2>Cofactor demand</h2>
+      <div class="bars" id="cofBars"></div>
+      <p class="hint">ATP from MVA (3/IPP) + IUP (2/molecule); NADPH from HMGR (2/mevalonate); O₂ from CrtW-Z.</p>
+    </div>
+    <div class="panel">
+      <h2>Diagnostics</h2>
+      <div class="diag" id="diag"></div>
+      <div class="derived" id="lipidReadout" style="display:none">lipid : carotenoid-precursor partition — lipid share <b id="lipidVal">—</b></div>
+    </div>
+  </div>
+
+  <!-- ── Sliders ──────────────────────────────────────────────────────── -->
+  <h2><span class="step">2</span>Parameters</h2>
+  <p class="hint">Every enzyme is a fold-expression multiplier (×&nbsp;baseline). Hover a label for source &amp; confidence.</p>
+
+  <div class="grid">
+    <div class="panel"><h2>Supply — MVA + tHMGR</h2><div class="sliders" id="grp_supply"></div></div>
+    <div class="panel"><h2>IUP feed (prenol / isoprenol)</h2><div class="sliders" id="grp_iup"></div></div>
+  </div>
+  <div class="grid" style="margin-top:16px">
+    <div class="panel"><h2>Interconversion — IDI <span style="color:var(--accent)">★ key unknown</span></h2><div class="sliders" id="grp_idi"></div></div>
+    <div class="panel"><h2>Prenyltransferase + GGPP</h2><div class="sliders" id="grp_pt"></div></div>
+  </div>
+  <div class="grid" style="margin-top:16px">
+    <div class="panel"><h2>Endogenous sinks</h2><div class="sliders" id="grp_sink"></div></div>
+    <div class="panel"><h2>Carotenoid + astaxanthin</h2><div class="sliders" id="grp_car"></div></div>
+  </div>
+  <div class="panel" style="margin-top:16px"><h2>Fat-body coupling</h2><div class="sliders" id="grp_fat"></div></div>
+
+  <div class="note">
+    <b>Read this before trusting the numbers.</b> This is a relative, qualitative model for building
+    intuition and ranking bottlenecks — not for predicting titre. Key insect-specific assumptions baked in:
+    <b>no squalene/sterol sink</b> (the dominant yeast drain — insects lack it); native MVA throughput is low
+    (default 0.1× yeast); the MVA pathway only reaches FPP natively; and <b>IDI activity is unknown</b> and is
+    the highlighted key tunable. Most kinetic constants are placeholders extrapolated from yeast/<i>Drosophila</i>.
+    Validation: load preset 1 (yeast) and confirm lycopene accumulates under strong GGPPS + WT cyclase, then
+    switch the cyclase to Y27R (or lower SaGGPPs) and watch β-carotene flux recover.
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════
+//  CONFIG — editable parameters with provenance (value / source / confidence)
+// ════════════════════════════════════════════════════════════════════════
+// Fixed baseline kinetic constants (not exposed as sliders; edit here).
+const K = {
+  Vmax_HMGS:2.5, Vmax_HMGR:1.2, Vmax_MVD:1.2, insect_vs_yeast_MVA:0.1,
+  Vmax_CK:1.5, Km_CK_prenol:5.0, Km_CK_isoprenol:2.0,
+  Vmax_IDI:3.0, Km_gen:1.0,
+  Vmax_FPPS:2.0, Vmax_GGPPS:1.5, Vmax_SaGGPPs:1.5, Vmax_SaGGPPs_DMAPP:1.5,
+  Vmax_CarRP:1.0, Vmax_CarB:0.5, Vmax_LCY:0.3,
+  // cyclase substrate inhibition v=Vmax·L/(Km+L+L²/Ki). Scaled to the network's
+  // operating range so the WT-vs-Y27R behaviour actually emerges: WT's peak
+  // throughput sits *below* the achievable lycopene flux, so lycopene piles up
+  // and chokes; Y27R (Ki→∞) is monotonic and clears it. The prompt's 30/100
+  // figures are placeholder relative units, not absolute.
+  Km_LCY:2.0, Ki_LCY_WT:1.5, Ki_LCY_Y27R:1e6,
+  Vmax_CrtWZ:0.4, k_dil:0.05, v_squalene_k_yeast:2.0,
+};
+
+// Editable defaults (sliders + selects). value, min, max, step, group, label, tip, conf.
+const SLIDERS = [
+  // supply
+  {key:'expr_HMGR', def:1, min:0, max:20, step:.1, grp:'supply', lab:'expr_HMGR (tHMGR)', conf:'med',
+    tip:'Heterologous HMGR knob. Insect HMGR lacks sterol feedback and native flux is low — the tHMGR benefit may be smaller than in yeast and trades against lipogenesis.'},
+  {key:'expr_MVA', def:1, min:0, max:20, step:.1, grp:'supply', lab:'expr_MVA (MVK/PMK/MVD)', conf:'low',
+    tip:'Lumped lower-MVA capacity, mevalonate→IPP (3 ATP). Native insect MVA baseline default 0.1× yeast.'},
+  // iup
+  {key:'prenol_in', def:0, min:0, max:20, step:.1, grp:'iup', lab:'prenol_in → DMAPP', conf:'med',
+    tip:'Exogenous prenol feed (relative units). CK step rate-limiting (high Km); IPK fast. 2 ATP/molecule, no NADPH. Prenol primes DMAPP directly — compensates weak IDI.'},
+  {key:'isoprenol_in', def:0, min:0, max:20, step:.1, grp:'iup', lab:'isoprenol_in → IPP', conf:'med',
+    tip:'Exogenous isoprenol feed. Feeds IPP; needs IDI to make DMAPP for the SaGGPPs primer.'},
+  {key:'feedstock_viability', def:1, min:0, max:1, step:.05, grp:'iup', lab:'feedstock_viability', conf:'low',
+    tip:'Generic 0–1 penalty for any uptake/toxicity. Isopentenols can be toxic at high concentration — set per your own data; not hard-coded.'},
+  // idi
+  {key:'expr_IDI', def:1, min:0, max:20, step:.1, grp:'idi', lab:'expr_IDI ★', conf:'low', key_unknown:true,
+    tip:'IPP⇌DMAPP. INSECT ACTIVITY UNKNOWN — the key tunable. Low IDI + isoprenol feed starves SaGGPPs of its DMAPP primer; prenol feed compensates.'},
+  {key:'Keq', def:0.25, min:0.05, max:1, step:.05, grp:'idi', lab:'Keq (DMAPP/IPP)', conf:'med',
+    tip:'IDI equilibrium constant DMAPP/IPP ≈ 0.25.'},
+  // prenyltransferase + ggpp
+  {key:'expr_FPPS', def:1, min:0, max:20, step:.1, grp:'pt', lab:'expr_FPPS', conf:'low',
+    tip:'ERG20 / Drosophila Fpps: DMAPP+IPP→GPP→FPP.'},
+  {key:'expr_GGPPS_native', def:0.2, min:0, max:20, step:.1, grp:'pt', lab:'expr_GGPPS_native', conf:'low',
+    tip:'Native (Drosophila quemao-type) GGPPS, low baseline: FPP+IPP→GGPP.'},
+  {key:'expr_SaGGPPs', def:1, min:0, max:20, step:.1, grp:'pt', lab:'expr_SaGGPPs', conf:'med',
+    tip:'Engineered SaGGPPs — the "flow restrictor". Too high + WT cyclase → lycopene buildup (let it emerge from kinetics). Shares FPP+IPP route AND the DMAPP-direct route.'},
+  {key:'f_SaGGPPs_DMAPP', def:1, min:0, max:1, step:1, grp:'pt', lab:'f_SaGGPPs_DMAPP (0/1)', conf:'med', toggle:true,
+    tip:'Gate the SaGGPPs DMAPP-direct route DMAPP(+3 IPP)→GGPP.'},
+  // sinks
+  {key:'k_dolichol', def:0.1, min:0, max:1, step:.01, grp:'sink', lab:'k_dolichol (FPP→dolichol)', conf:'low',
+    tip:'cis-prenyltransferase drain. Small.'},
+  {key:'k_CoQ', def:0.15, min:0, max:1, step:.01, grp:'sink', lab:'k_CoQ (FPP→ubiquinone)', conf:'low',
+    tip:'PDSS drain to CoQ. Small–moderate.'},
+  {key:'k_farnesylation', def:0.05, min:0.01, max:1, step:.01, grp:'sink', lab:'k_farnesylation (floor)', conf:'low',
+    tip:'Protein farnesylation — essential, do not zero (floor 0.01).'},
+  {key:'k_GG_prenylation', def:0.05, min:0.01, max:1, step:.01, grp:'sink', lab:'k_GG_prenylation (floor)', conf:'low',
+    tip:'Protein geranylgeranylation — essential, do not zero (floor 0.01).'},
+  // carotenoid
+  {key:'expr_CarRP', def:1, min:0, max:20, step:.1, grp:'car', lab:'expr_CarRP (phytoene synthase)', conf:'med',
+    tip:'CarRP-A: 2 GGPP→phytoene.'},
+  {key:'expr_CarB', def:1, min:0, max:20, step:.1, grp:'car', lab:'expr_CarB (desaturase)', conf:'low',
+    tip:'CarB: phytoene→lycopene (4 steps lumped). Baseline Vmax set LOW — often the limiting step.'},
+  {key:'expr_LCY', def:1, min:0, max:20, step:.1, grp:'car', lab:'expr_LCY (cyclase)', conf:'med',
+    tip:'CarRP-R lycopene cyclase — substrate-inhibited: v=Vmax·L/(Km+L+L²/Ki). Variant selector at top sets Ki (Y27R → ∞).'},
+  {key:'expr_CrtWZ', def:1, min:0, max:20, step:.1, grp:'car', lab:'expr_CrtWZ (astaxanthin)', conf:'low',
+    tip:'CrtW-Z fusion: β-carotene→astaxanthin (needs astaxanthin = on). Cost O₂ + reductant.'},
+  {key:'accessibility', def:0.2, min:0, max:1, step:.05, grp:'car', lab:'accessibility (lipid-droplet)', conf:'low',
+    tip:'Lipid-droplet sequestration of CrtW-Z. cytosolic ≈0.2, LB-targeted ≈0.8 (Ma2021).'},
+  // fat-body
+  {key:'lipid_priority', def:1, min:0, max:5, step:.1, grp:'fat', lab:'lipid_priority', conf:'low',
+    tip:'Coarse, illustrative coupling. With fat-body coupling ON, lipogenesis competes for acetyl-CoA; high lipid_priority starves MVA. Aggressive HMGR pushes acetyl toward carotenoid precursor (lowering lipid).'},
+];
+
+const SELECTS = ['organism_mode','cyclase_variant','astax_enabled','couple_lipogenesis'];
+
+// ── State ────────────────────────────────────────────────────────────────
+const STATE = {};
+function setDefaults(){
+  STATE.organism_mode='insect'; STATE.cyclase_variant='WT';
+  STATE.astax_enabled=0; STATE.couple_lipogenesis=0;
+  SLIDERS.forEach(s=>STATE[s.key]=s.def);
+}
+setDefaults();
+
+// ════════════════════════════════════════════════════════════════════════
+//  MODEL — rate laws (relative units, unit-annotated in comments)
+// ════════════════════════════════════════════════════════════════════════
+// State vector x (11): [HMG,MEV,IPP,DMAPP,GPP,FPP,GGPP,PHY,LYC,BCAR,ASTA]
+const SP = ['HMG','MEV','IPP','DMAPP','GPP','FPP','GGPP','phytoene','lycopene','bcarotene','astaxanthin'];
+
+function resolveP(){
+  const P = Object.assign({}, K);
+  SLIDERS.forEach(s=>P[s.key]=+STATE[s.key]);
+  P.insect_mode = STATE.organism_mode==='insect';
+  P.mva = P.insect_mode ? K.insect_vs_yeast_MVA : 1;
+  P.v_squalene_k = P.insect_mode ? 0 : K.v_squalene_k_yeast;
+  P.Ki_LCY = STATE.cyclase_variant==='Y27R' ? K.Ki_LCY_Y27R : K.Ki_LCY_WT; // Y27A behaves as WT
+  P.astax_enabled = +STATE.astax_enabled === 1;
+  // coarse fat-body coupling: HMGR push competes with lipogenesis for acetyl-CoA
+  if (+STATE.couple_lipogenesis===1){
+    const push = P.expr_HMGR;
+    P.acetylAvail = push/(push + P.lipid_priority);
+    P.lipidShare  = P.lipid_priority/(push + P.lipid_priority);
+  } else { P.acetylAvail = 1; P.lipidShare = null; }
+  return P;
+}
+
+function rates(x, P){
+  const [HMG,MEV,IPP,DMAPP,GPP,FPP,GGPP,PHY,LYC,BCAR]=x;
+  const mm=(s,V,Km)=>V*s/(Km+s);
+  const bi=(a,b,V,Ka,Kb)=>V*(a/(Ka+a))*(b/(Kb+b));
+  const Kg=P.Km_gen, r={};
+  r.HMGS = P.Vmax_HMGS*P.mva*P.acetylAvail;                 // acetyl-CoA → HMG-CoA (capacity)
+  r.HMGR = mm(HMG, P.expr_HMGR*P.Vmax_HMGR, Kg);            // HMG-CoA → mevalonate, 2 NADPH
+  r.MVD  = mm(MEV, P.expr_MVA*P.Vmax_MVD*P.mva, Kg);        // mevalonate → IPP, 3 ATP
+  r.prenolCK    = P.feedstock_viability*mm(P.prenol_in,    P.Vmax_CK, P.Km_CK_prenol);    // → DMAPP, 2 ATP
+  r.isoprenolCK = P.feedstock_viability*mm(P.isoprenol_in, P.Vmax_CK, P.Km_CK_isoprenol); // → IPP, 2 ATP
+  r.IDI  = P.expr_IDI*P.Vmax_IDI*(IPP - DMAPP/P.Keq)/(Kg+IPP+DMAPP); // net IPP→DMAPP (signed)
+  r.FPPS1= bi(DMAPP,IPP, P.expr_FPPS*P.Vmax_FPPS, Kg,Kg);   // DMAPP+IPP → GPP
+  r.FPPS2= bi(GPP,IPP,   P.expr_FPPS*P.Vmax_FPPS, Kg,Kg);   // GPP+IPP → FPP
+  r.GGn  = bi(FPP,IPP, P.expr_GGPPS_native*P.Vmax_GGPPS, Kg,Kg);  // FPP+IPP → GGPP (native)
+  r.SaF  = bi(FPP,IPP, P.expr_SaGGPPs*P.Vmax_SaGGPPs, Kg,Kg);     // FPP+IPP → GGPP (SaGGPPs)
+  r.SaD  = P.f_SaGGPPs_DMAPP*bi(DMAPP,IPP, P.expr_SaGGPPs*P.Vmax_SaGGPPs_DMAPP, Kg,Kg); // DMAPP+3IPP → GGPP
+  r.dol  = P.k_dolichol*FPP; r.coq = P.k_CoQ*FPP;
+  r.farn = P.k_farnesylation*FPP; r.squal = P.v_squalene_k*FPP;
+  r.ggpren = P.k_GG_prenylation*GGPP;
+  r.PSY  = mm(GGPP, P.expr_CarRP*P.Vmax_CarRP, Kg);         // 2 GGPP → phytoene
+  r.CarB = mm(PHY,  P.expr_CarB*P.Vmax_CarB, Kg);           // phytoene → lycopene
+  r.LCY  = P.expr_LCY*P.Vmax_LCY*LYC/(P.Km_LCY + LYC + LYC*LYC/P.Ki_LCY); // substrate-inhibited
+  r.astax= P.astax_enabled ? mm(BCAR, P.expr_CrtWZ*P.Vmax_CrtWZ*P.accessibility, Kg) : 0;
+  return r;
+}
+
+function residual(x, P){
+  const r=rates(x,P), kd=P.k_dil, d=new Array(11);
+  d[0]=r.HMGS - r.HMGR - kd*x[0];
+  d[1]=r.HMGR - r.MVD  - kd*x[1];
+  d[2]=r.MVD + r.isoprenolCK - r.IDI - r.FPPS1 - r.FPPS2 - r.GGn - r.SaF - 3*r.SaD - kd*x[2];
+  d[3]=r.prenolCK + r.IDI - r.FPPS1 - r.SaD - kd*x[3];
+  d[4]=r.FPPS1 - r.FPPS2 - kd*x[4];
+  d[5]=r.FPPS2 - r.GGn - r.SaF - r.dol - r.coq - r.farn - r.squal - kd*x[5];
+  d[6]=r.GGn + r.SaF + r.SaD - 2*r.PSY - r.ggpren - kd*x[6];
+  d[7]=r.PSY - r.CarB - kd*x[7];
+  d[8]=r.CarB - r.LCY - kd*x[8];
+  d[9]=r.LCY - r.astax - kd*x[9];
+  d[10]=r.astax - kd*x[10];
+  return d;
+}
+
+// ── Dense linear solve (Gaussian elimination, partial pivot) ──────────────
+function solveLin(A, b){
+  const n=b.length, M=A.map((row,i)=>row.concat(b[i]));
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-14) return null;
+    [M[c],M[p]]=[M[p],M[c]];
+    for(let r=0;r<n;r++){ if(r===c) continue; const f=M[r][c]/M[c][c];
+      for(let k=c;k<=n;k++) M[r][k]-=f*M[c][k]; }
+  }
+  const out=new Array(n);
+  for(let i=0;i<n;i++) out[i]=M[i][n]/M[i][i];
+  return out;
+}
+
+// ── Damped Newton steady-state solver (finite-difference Jacobian) ────────
+function solveSS(P, x0){
+  const n=11; let x = x0 ? x0.slice() : new Array(n).fill(0.5);
+  const norm=v=>Math.sqrt(v.reduce((s,a)=>s+a*a,0));
+  for(let it=0; it<300; it++){
+    const F=residual(x,P), nF=norm(F);
+    if(nF<1e-10) break;
+    const J=[]; for(let i=0;i<n;i++) J.push(new Array(n));
+    for(let j=0;j<n;j++){
+      const h=1e-6*Math.max(1,Math.abs(x[j])), xp=x.slice(); xp[j]+=h;
+      const Fp=residual(xp,P);
+      for(let i=0;i<n;i++) J[i][j]=(Fp[i]-F[i])/h;
+    }
+    let dx=solveLin(J, F.map(v=>-v));
+    if(!dx){ for(let i=0;i<n;i++) J[i][i]+=1e-6; dx=solveLin(J,F.map(v=>-v))||new Array(n).fill(0); }
+    let a=1, accepted=false;
+    for(let k=0;k<30;k++){
+      const xn=x.map((v,i)=>Math.max(0, v+a*dx[i]));
+      if(norm(residual(xn,P)) < nF){ x=xn; accepted=true; break; }
+      a*=0.5;
+    }
+    if(!accepted){ x=x.map((v,i)=>Math.max(0, v+a*dx[i])); }
+  }
+  return {x, r:rates(x,P)};
+}
+
+const targetFlux=(r,P)=> P.astax_enabled ? r.astax : r.LCY;
+
+// ── MCA: flux control coefficients by ±1% finite difference ───────────────
+function mca(P, ss){
+  const J0=targetFlux(ss.r,P);
+  let enzymes=[['HMGR','expr_HMGR'],['MVA','expr_MVA'],['IDI','expr_IDI'],['FPPS','expr_FPPS'],
+    ['GGPPS_nat','expr_GGPPS_native'],['SaGGPPs','expr_SaGGPPs'],['CarRP','expr_CarRP'],
+    ['CarB','expr_CarB'],['LCY','expr_LCY']];
+  if(P.astax_enabled) enzymes.push(['CrtWZ','expr_CrtWZ']);
+  const out=[]; let sum=0;
+  for(const [name,key] of enzymes){
+    if(P[key]<=0 || J0<=1e-12){ out.push([name,0]); continue; }
+    const P2=Object.assign({},P); P2[key]=P[key]*1.01;
+    const J2=targetFlux(solveSS(P2, ss.x).r, P2);
+    const fcc=(J2-J0)/J0/0.01; out.push([name,fcc]); sum+=fcc;
+  }
+  return {out, sum, J0};
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  FLUX MAP layout
+// ════════════════════════════════════════════════════════════════════════
+const NODES = {
+  prenol:{x:55,y:70,lab:'prenol',feed:'prenol_in'}, isoprenol:{x:55,y:300,lab:'isoprenol',feed:'isoprenol_in'},
+  acetyl:{x:55,y:185,lab:'acetyl-CoA',fixed:1},
+  HMG:{x:165,y:185,lab:'HMG-CoA',sp:0}, MEV:{x:265,y:185,lab:'mevalonate',sp:1},
+  IPP:{x:390,y:130,lab:'IPP',sp:2}, DMAPP:{x:390,y:300,lab:'DMAPP',sp:3},
+  GPP:{x:500,y:215,lab:'GPP',sp:4}, FPP:{x:610,y:215,lab:'FPP',sp:5},
+  GGPP:{x:735,y:300,lab:'GGPP',sp:6},
+  phytoene:{x:735,y:410,lab:'phytoene',sp:7}, lycopene:{x:850,y:410,lab:'lycopene',sp:8},
+  bcarotene:{x:850,y:520,lab:'β-carotene',sp:9}, astaxanthin:{x:945,y:520,lab:'astax',sp:10},
+  // sinks
+  squalene:{x:610,y:90,lab:'squalene',sink:1,grey:1},
+  dolichol:{x:560,y:330,lab:'dolichol',sink:1}, coq:{x:625,y:355,lab:'CoQ',sink:1},
+  farnesyl:{x:495,y:330,lab:'farnesyl',sink:1}, ggpren:{x:820,y:230,lab:'GG-prenyl',sink:1},
+};
+const EDGES = [
+  ['acetyl','HMG',r=>r.HMGS],['HMG','MEV',r=>r.HMGR],['MEV','IPP',r=>r.MVD],
+  ['prenol','DMAPP',r=>r.prenolCK],['isoprenol','IPP',r=>r.isoprenolCK],
+  ['IPP','DMAPP',r=>Math.abs(r.IDI)],
+  ['DMAPP','GPP',r=>r.FPPS1],['GPP','FPP',r=>r.FPPS2],
+  ['FPP','GGPP',r=>r.GGn+r.SaF],['DMAPP','GGPP',r=>r.SaD,{dash:1}],
+  ['GGPP','phytoene',r=>r.PSY],['phytoene','lycopene',r=>r.CarB],
+  ['lycopene','bcarotene',r=>r.LCY],['bcarotene','astaxanthin',r=>r.astax],
+  ['FPP','squalene',r=>r.squal,{grey:1}],['FPP','dolichol',r=>r.dol],
+  ['FPP','coq',r=>r.coq],['FPP','farnesyl',r=>r.farn],['GGPP','ggpren',r=>r.ggpren],
+];
+
+const SVGNS='http://www.w3.org/2000/svg';
+function el(tag,attrs,txt){ const e=document.createElementNS(SVGNS,tag);
+  for(const k in attrs) e.setAttribute(k,attrs[k]); if(txt!=null) e.textContent=txt; return e; }
+
+function drawMap(x, r, P){
+  const eg=document.getElementById('edges'), ng=document.getElementById('nodes');
+  eg.innerHTML=''; ng.innerHTML='';
+  const fluxes = EDGES.map(e=>e[2](r));
+  const maxF = Math.max(1e-6, ...fluxes);
+  const maxPool = Math.max(1e-6, ...x);
+  EDGES.forEach((e,i)=>{
+    const a=NODES[e[0]], b=NODES[e[1]], opt=e[3]||{}, f=fluxes[i];
+    const w = f>1e-9 ? 1+5.5*Math.sqrt(f/maxF) : 0.6;
+    const cls='edge'+((opt.grey||(P.insect_mode&&e[1]==='squalene'))?' grey':'')+(opt.dash?' dash':'');
+    const ln=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:cls,'stroke-width':w.toFixed(2),'marker-end':'url(#arr)'});
+    ln.appendChild(el('title',{}, `${a.lab} → ${b.lab}: flux ${f.toFixed(3)}`));
+    eg.appendChild(ln);
+  });
+  for(const id in NODES){
+    const nd=NODES[id]; let rad=13, fill='var(--panel)', stroke='var(--line)', val='';
+    if(nd.sp!=null){ const p=x[nd.sp]; rad=10+13*Math.sqrt(p/maxPool); val=p.toFixed(2);
+      fill = (P.insect_mode&&id==='astaxanthin'&&!P.astax_enabled)?'var(--field)':'var(--inputbg)'; stroke='var(--cyan)'; }
+    else if(nd.feed){ const v=+STATE[nd.feed]; rad=10+8*Math.sqrt(v/20); val=v.toFixed(1); stroke='var(--gold)'; }
+    else if(nd.sink){ rad=11; stroke=nd.grey&&P.insect_mode?'#1f3a3d':'var(--faint)'; fill='var(--field)'; }
+    const grp=el('g',{});
+    const c=el('circle',{cx:nd.x,cy:nd.y,r:rad.toFixed(1),fill:fill,stroke:stroke,'stroke-width':1.4});
+    c.appendChild(el('title',{}, nd.lab+(val?`: pool ${val}`:'')));
+    grp.appendChild(c);
+    grp.appendChild(el('text',{x:nd.x,y:nd.y-rad-4,class:'node-lab','text-anchor':'middle'}, nd.lab));
+    if(val) grp.appendChild(el('text',{x:nd.x,y:nd.y+3,class:'node-val','text-anchor':'middle'}, val));
+    ng.appendChild(grp);
+  }
+}
+
+// ── tiny div bar charts ───────────────────────────────────────────────────
+function barRow(name, val, frac, signed){
+  const cls = signed ? (val>=0?'pos':'neg') : '';
+  const w = Math.min(50, Math.abs(frac)*50);
+  const style = signed
+    ? (val>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`)
+    : `left:0;width:${Math.min(100,Math.abs(frac)*100)}%`;
+  return `<div class="bar"><span class="name">${name}</span>
+    <span class="track">${signed?'<span class="axis0"></span>':''}<span class="fill ${cls}" style="${style}"></span></span>
+    <span class="num">${val>=0?'':'−'}${Math.abs(val).toFixed(3)}</span></div>`;
+}
+
+// ── diagnostics ───────────────────────────────────────────────────────────
+function diagnose(x, r, P, fcc){
+  const [HMG,MEV,IPP,DMAPP,GPP,FPP,GGPP,PHY,LYC,BCAR,ASTA]=x;
+  const msgs=[]; const mean=x.reduce((s,a)=>s+a,0)/x.length || 1;
+  const hi=v=>v>1.8*mean, lo=v=>v<0.4*mean;
+  const supplyFlux=r.HMGS+r.prenolCK+r.isoprenolCK;
+  const top = fcc.out.slice().sort((a,b)=>b[1]-a[1])[0];
+
+  if(LYC>1.5 && LYC>1.3*BCAR && P.Ki_LCY<1e5)
+    msgs.push(['warn','Lycopene piling up, β-carotene low → <b>cyclase substrate inhibition</b> (WT/Y27A). Switch to Y27R, or lower SaGGPPs (the flow restrictor) to keep lycopene below Km.']);
+  if(hi(GGPP) && lo(PHY))
+    msgs.push(['warn','GGPP high & phytoene low → <b>phytoene synthase (CarRP-A) limiting</b>. Raise expr_CarRP.']);
+  if((hi(IPP)||hi(DMAPP)) && lo(GGPP) && GGPP<FPP)
+    msgs.push(['warn','IPP/DMAPP high & GGPP low → <b>prenyltransferase / GGPPS limiting</b>. Raise expr_FPPS / expr_SaGGPPs.']);
+  if(DMAPP<0.3*mean && IPP>1.5*mean && r.SaD<0.05*Math.max(r.SaF,1e-6)+1e-6 && (P.isoprenol_in>0||P.expr_MVA>0))
+    msgs.push(['warn','DMAPP low, IPP high, SaGGPPs DMAPP-route stalled → <b>IDI too weak for the primer</b>. Raise expr_IDI or feed prenol (primes DMAPP directly).']);
+  if(lo(IPP)&&lo(DMAPP)&&lo(FPP)&&lo(GGPP) && targetFlux(r,P)<0.05)
+    msgs.push(['warn','All prenyl pools low & end-product low → <b>C5 supply limiting</b>. Raise tHMGR (expr_HMGR) and/or feed prenol/isoprenol.']);
+  if(P.astax_enabled && hi(BCAR) && lo(ASTA))
+    msgs.push(['warn','β-carotene high & astaxanthin low → <b>CrtW-Z accessibility limiting</b>. Lipid-droplet-target the fusion (raise accessibility).']);
+  if(P.lipidShare!=null && P.lipidShare<0.3)
+    msgs.push(['warn','Lipid share dropping sharply → <b>MVA push is cannibalising lipogenesis</b>. Back off tHMGR.']);
+
+  if(top && top[1]>0.05)
+    msgs.unshift(['ok',`Top flux-control: <b>${top[0]}</b> (FCC ${top[1].toFixed(2)}) — the highest-leverage enzyme for ${P.astax_enabled?'astaxanthin':'β-carotene'} flux right now.`]);
+  if(!msgs.length) msgs.push(['ok','No dominant bottleneck flagged — flux is reasonably balanced across the network.']);
+  return msgs;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  RECOMPUTE + RENDER
+// ════════════════════════════════════════════════════════════════════════
+let lastX=null;
+function recompute(){
+  const P=resolveP();
+  const ss=solveSS(P, lastX); lastX=ss.x;
+  const {x,r}=ss;
+  drawMap(x,r,P);
+
+  // FCC
+  const fcc=mca(P,ss);
+  document.getElementById('fccTarget').textContent = P.astax_enabled?'astaxanthin':'β-carotene';
+  const maxAbs=Math.max(1e-6,...fcc.out.map(o=>Math.abs(o[1])));
+  document.getElementById('fccBars').innerHTML =
+    fcc.out.map(o=>barRow(o[0], o[1], o[1]/maxAbs, true)).join('') || '<div class="hint">target flux ≈ 0</div>';
+  document.getElementById('fccSum').textContent = fcc.sum.toFixed(2);
+
+  // pools
+  const maxP=Math.max(1e-6,...x);
+  document.getElementById('poolBars').innerHTML =
+    SP.map((n,i)=>barRow(n, x[i], x[i]/maxP, false)).join('');
+
+  // cofactors
+  const nadphMVA=2*r.HMGR, atpMVA=3*r.MVD, atpIUP=2*(r.prenolCK+r.isoprenolCK), o2=r.astax, nadphAst=r.astax;
+  const cof=[['ATP · MVA',atpMVA],['ATP · IUP',atpIUP],['NADPH · HMGR',nadphMVA],['NADPH · astax',nadphAst],['O₂ · astax',o2]];
+  const maxC=Math.max(1e-6,...cof.map(c=>c[1]));
+  document.getElementById('cofBars').innerHTML = cof.map(c=>barRow(c[0],c[1],c[1]/maxC,false)).join('');
+
+  // diagnostics
+  document.getElementById('diag').innerHTML =
+    diagnose(x,r,P,fcc).map(m=>`<div class="verdict ${m[0]}">${m[1]}</div>`).join('');
+  const lr=document.getElementById('lipidReadout');
+  if(P.lipidShare!=null){ lr.style.display='block'; document.getElementById('lipidVal').textContent=(P.lipidShare*100).toFixed(0)+'%'; }
+  else lr.style.display='none';
+
+  syncURL();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  UI BUILD + bindings
+// ════════════════════════════════════════════════════════════════════════
+function buildSliders(){
+  SLIDERS.forEach(s=>{
+    const wrap=document.getElementById('grp_'+s.grp); if(!wrap) return;
+    const row=document.createElement('div'); row.className='srow'+(s.key_unknown?' key':'');
+    row.innerHTML=`<label><span class="tip" title="${s.tip.replace(/"/g,'&quot;')}">${s.lab}</span><span class="conf ${s.conf}">${s.conf}</span></label>
+      <input type="range" id="r_${s.key}" min="${s.min}" max="${s.max}" step="${s.step}" value="${STATE[s.key]}">
+      <span class="sval" id="v_${s.key}">${(+STATE[s.key]).toFixed(s.toggle?0:2)}</span>`;
+    wrap.appendChild(row);
+    const inp=row.querySelector('input');
+    inp.addEventListener('input',()=>{ STATE[s.key]=+inp.value;
+      document.getElementById('v_'+s.key).textContent=(+inp.value).toFixed(s.toggle?0:2); recompute(); });
+  });
+}
+function syncSliders(){
+  SLIDERS.forEach(s=>{ const inp=document.getElementById('r_'+s.key); if(inp){ inp.value=STATE[s.key];
+    document.getElementById('v_'+s.key).textContent=(+STATE[s.key]).toFixed(s.toggle?0:2); } });
+  SELECTS.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=STATE[id]; });
+}
+SELECTS.forEach(id=>{ document.getElementById(id).addEventListener('change',e=>{ STATE[id]=e.target.value; recompute(); }); });
+
+// ── presets ────────────────────────────────────────────────────────────────
+const PRESETS = {
+  yeast:   { organism_mode:'yeast', cyclase_variant:'WT', astax_enabled:0, couple_lipogenesis:0,
+             expr_HMGR:3, expr_MVA:3, expr_SaGGPPs:6, expr_GGPPS_native:1,
+             expr_CarRP:2, expr_CarB:2, expr_LCY:1 },
+  bsf:     { organism_mode:'insect', cyclase_variant:'WT', astax_enabled:0, couple_lipogenesis:0,
+             expr_SaGGPPs:0, expr_GGPPS_native:0.2, expr_CarRP:0, expr_CarB:0, expr_LCY:0 },
+  construct:{organism_mode:'insect', cyclase_variant:'Y27R', astax_enabled:0,
+             expr_SaGGPPs:1, expr_CarRP:1, expr_CarB:1, expr_LCY:1 },
+  thmgr:   { organism_mode:'insect', cyclase_variant:'Y27R', astax_enabled:0, couple_lipogenesis:1,
+             expr_HMGR:6, expr_SaGGPPs:1, expr_CarRP:1, expr_CarB:1, expr_LCY:1, lipid_priority:1 },
+  prenol:  { organism_mode:'insect', cyclase_variant:'Y27R', astax_enabled:0,
+             prenol_in:6, expr_SaGGPPs:1, expr_CarRP:1, expr_CarB:1, expr_LCY:1 },
+  astax:   { organism_mode:'insect', cyclase_variant:'Y27R', astax_enabled:1,
+             expr_SaGGPPs:1, expr_CarRP:1, expr_CarB:1, expr_LCY:1, expr_CrtWZ:1, accessibility:0.8 },
+};
+function applyPreset(name){
+  if(name==='reset'){ setDefaults(); lastX=null; syncSliders(); recompute(); return; }
+  const p=PRESETS[name]; if(!p) return;
+  setDefaults();           // start from defaults, then overlay
+  Object.assign(STATE, p);
+  lastX=null; syncSliders(); recompute();
+}
+document.querySelectorAll('button[data-preset]').forEach(b=>
+  b.addEventListener('click',()=>applyPreset(b.dataset.preset)));
+
+// ── URL / localStorage state ────────────────────────────────────────────────
+function syncURL(){
+  try{ const s=btoa(JSON.stringify(STATE)); history.replaceState(null,'','#'+s);
+    localStorage.setItem('bsf-flux-state', s); }catch(e){}
+}
+function loadState(){
+  let s=null;
+  if(location.hash.length>1) s=location.hash.slice(1);
+  else s=localStorage.getItem('bsf-flux-state');
+  if(s){ try{ const o=JSON.parse(atob(s)); Object.keys(STATE).forEach(k=>{ if(k in o) STATE[k]=o[k]; }); }catch(e){} }
+}
+document.getElementById('copylink').addEventListener('click',()=>{
+  navigator.clipboard.writeText(location.href).then(()=>{
+    const b=document.getElementById('copylink'), t=b.textContent; b.textContent='copied ✓';
+    setTimeout(()=>b.textContent=t,1200); });
+});
+
+// ── init ────────────────────────────────────────────────────────────────────
+loadState();
+buildSliders();
+syncSliders();
+recompute();
+</script>
+
+<!-- ── Sidebar nav — keep this last, before </body> ──────────────────────── -->
+<script src="/tools/nav.js"></script>
+</body>
+</html>
