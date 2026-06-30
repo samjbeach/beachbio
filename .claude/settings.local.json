@@ -10,7 +10,8 @@
       "PowerShell(& \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth status 2>&1)",
       "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Sam\\\\Documents\\\\BeachBio\\\\public\\\\tools\\\\saponification-timer\")",
       "PowerShell(npx wrangler deploy)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "PowerShell(git add -A)"
     ]
   }
 }

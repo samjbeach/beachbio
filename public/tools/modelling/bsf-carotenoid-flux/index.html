@@ -84,6 +84,17 @@
   .bar .num { color:var(--ink); text-align:right; }
   .axis0 { position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--faint); }
 
+  /* ── ensemble whisker bars ──────────────────────────────────────────── */
+  .ensbar { display:grid; grid-template-columns:108px 1fr 86px; align-items:center; gap:8px; font-family:var(--mono); font-size:11px; }
+  .ensbar .name { color:var(--muted); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ensbar .track { position:relative; height:16px; background:var(--inputbg); border-radius:3px; }
+  .ensbar .whisk { position:absolute; top:7px; height:2px; background:var(--faint); border-radius:2px; }
+  .ensbar .med { position:absolute; top:2px; width:3px; height:12px; border-radius:2px; }
+  .ensbar .med.engineer { background:var(--ok); } .ensbar .med.measure { background:var(--gold); } .ensbar .med.minor { background:var(--cyan); }
+  .ensbar .tag { font-size:8.5px; letter-spacing:.04em; text-transform:uppercase; }
+  .ensbar .tag.engineer { color:var(--ok); } .ensbar .tag.measure { color:var(--gold); } .ensbar .tag.minor { color:var(--faint); }
+  .ens-axis { position:absolute; top:-2px; bottom:-2px; width:1px; background:var(--faint); opacity:.6; }
+
   .diag { display:flex; flex-direction:column; gap:7px; }
   .presetbtns { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .sub-h { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:16px 0 6px; }
@@ -95,6 +106,12 @@
   table.params { font-size:11.5px; }
   table.params td, table.params th { text-align:left; }
   table.params td:nth-child(2){ font-family:var(--mono); color:var(--ink); }
+  /* per-parameter confidence chips [§6/§7] */
+  .conf { font-family:var(--mono); font-size:8.5px; letter-spacing:.05em; text-transform:uppercase; padding:1px 6px; border-radius:4px; border:1px solid var(--line); white-space:nowrap; }
+  .conf.high { color:var(--ok); border-color:rgba(122,198,123,.5); background:rgba(122,198,123,.08); }
+  .conf.med  { color:var(--gold); border-color:rgba(224,164,92,.5); background:rgba(224,164,92,.08); }
+  .conf.mech { color:var(--cyan); border-color:rgba(95,184,196,.5); background:rgba(95,184,196,.08); }
+  .conf.gap  { color:var(--warn); border-color:rgba(224,108,92,.5); background:rgba(224,108,92,.08); }
   details.foldsec > summary { cursor:pointer; font-size:13px; color:var(--ink); font-weight:600; padding:6px 0; }
 </style>
 </head>
@@ -116,6 +133,7 @@
       <button class="preset" data-preset="construct">Current construct</button>
       <button class="preset" data-preset="bsf">BSF wild-type</button>
       <button class="preset" data-preset="recmva">+ recombinant MVA</button>
+      <button class="preset" data-preset="fbrmva">+ FBR MVK</button>
       <button class="preset" data-preset="iup">+ IUP feed</button>
       <button class="preset" data-preset="combo">+ IUP &amp; rec-MVA</button>
       <button class="preset" data-preset="astax">+ astaxanthin</button>
@@ -153,11 +171,24 @@
 
     <div>
       <div class="panel">
-        <h2>Where's the leverage? <span style="text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400">— boost which enzyme to make more <span id="prodName">β-carotene</span>?</span></h2>
-        <div class="bars" id="fccBars"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h2 style="margin:0">Where's the leverage? <span style="text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400">— boost which enzyme to make more <span id="prodName">β-carotene</span>?</span></h2>
+          <button class="preset" id="runEnsemble">run sensitivity analysis</button>
+        </div>
+        <div class="bars" id="fccBars" style="margin-top:10px"></div>
         <p class="hint">Bars show how much the end-product flux moves if you boost each enzyme 1% (a flux-control
-          coefficient). Long green bar = high leverage, boost it. Red = boosting it <i>hurts</i> (it's pulling
-          flux into a side-branch). Near-zero = not limiting right now.</p>
+          coefficient) <b>at the midpoint parameter set</b>. Long green bar = high leverage, boost it. Red =
+          boosting it <i>hurts</i> (it's pulling flux into a side-branch). Near-zero = not limiting right now.</p>
+        <div id="ensembleBox" style="display:none">
+          <div class="sub-h" style="margin-top:14px">Sensitivity ensemble <span style="color:var(--faint);text-transform:none;letter-spacing:0">— FCC distribution over the plausible parameter ranges</span></div>
+          <div class="bars" id="ensBars"></div>
+          <div id="ensVerdict" class="diag" style="margin-top:10px"></div>
+          <p class="hint">Each whisker is one enzyme's control coefficient across ~240 draws sampling every
+            kinetic constant from its <code>[lo,hi]</code> range (the bar = median, the line = 10–90%).
+            <b style="color:var(--ok)">Engineer next</b> = robustly top-ranked whatever the true parameters are
+            (a recommendation). <b style="color:var(--gold)">Measure first</b> = its rank flips across the
+            plausible range — the model can't call it, so a real measurement here would most reduce uncertainty.</p>
+        </div>
       </div>
 
       <div class="grid" style="margin-top:14px">
@@ -185,8 +216,10 @@
   <h2><span class="step">2</span>Construct</h2>
   <p class="hint">Endogenous enzymes are already in the fly — their <b>native</b> activity is feedback-limited.
     Put an enzyme in a <b>cassette</b> to express it recombinantly (cisgenic, semi-synthetic promoter — escapes
-    feedback). Heterologous enzymes only exist once they're in a cassette. An enzyme can sit in several
-    cassettes at once (its expression is the sum of those promoters).</p>
+    <i>transcriptional</i> feedback). <b>Exception:</b> active-site product inhibition (e.g. MVK by GPP/FPP/GGPP)
+    is <i>not</i> escaped by a strong promoter — only a feedback-resistant (FBR) variant escapes it. Heterologous
+    enzymes only exist once they're in a cassette. An enzyme can sit in several cassettes at once (its expression
+    is the sum of those promoters).</p>
 
   <div class="panel">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -217,11 +250,14 @@
         your own data.</p>
     </div>
     <div class="panel">
-      <h2>Endogenous drains &amp; tuning</h2>
+      <h2>Endogenous drains, cofactors &amp; tuning</h2>
       <div class="field-row"><label>FPP → dolichol</label><input type="range" id="r_k_dolichol" min="0" max="1" step="0.01"><span class="muted-cell" id="v_k_dolichol"></span></div>
       <div class="field-row"><label>FPP → CoQ (ubiquinone)</label><input type="range" id="r_k_CoQ" min="0" max="1" step="0.01"><span class="muted-cell" id="v_k_CoQ"></span></div>
-      <div class="field-row"><label>Native feedback strength <span class="unit">0 = off</span></label><input type="range" id="r_feedback_strength" min="0" max="4" step="0.1"><span class="muted-cell" id="v_feedback_strength"></span></div>
-      <div class="field-row"><label>Lipid priority <span class="unit">fat-body pull</span></label><input type="range" id="r_lipid_priority" min="0" max="5" step="0.1"><span class="muted-cell" id="v_lipid_priority"></span></div>
+      <div class="field-row"><label>Native reg. feedback strength <span class="unit">transcriptional · 0 = off</span></label><input type="range" id="r_feedback_strength" min="0" max="4" step="0.1"><span class="muted-cell" id="v_feedback_strength"></span></div>
+      <div class="field-row"><label>FAS draw <span class="unit">lipogenesis — shares acetyl-CoA + NADPH</span></label><input type="range" id="r_fas_draw" min="0" max="5" step="0.1"><span class="muted-cell" id="v_fas_draw"></span></div>
+      <div class="field-row"><label>ATP headroom <span class="unit">gates the IUP feed</span></label><input type="range" id="r_atp_headroom" min="0" max="10" step="0.5"><span class="muted-cell" id="v_atp_headroom"></span></div>
+      <div class="field-row"><label>IDI equilibrium <span class="unit">Keq (DMAPP/IPP) — flagged key unknown</span></label>
+        <select id="idi_host"><option value="insect">insect (0.4–0.7)</option><option value="microbial">microbial host (2–5)</option></select></div>
       <label class="toggle" style="margin-top:6px"><input type="checkbox" id="c_saggpps_dmapp"> SaGGPPs uses the DMAPP-direct route</label>
     </div>
   </div>
@@ -248,52 +284,110 @@
 //  ENZYME REGISTRY — the single source of truth for the network
 // ════════════════════════════════════════════════════════════════════════
 // kind: 'endo' (native to BSF) | 'hetero' (engineered in)
-// feedback: native activity is throttled by downstream FPP (bypassed when recombinant)
+//
+// [§1] Two mechanistically DISTINCT kinds of "feedback" — the conflation flips the
+//      cisgenic-vs-engineered call, so they are split:
+//   regFeedback     — transcriptional / ERAD / promoter-level regulation. A recombinant
+//                     copy behind a strong promoter ESCAPES it (this is what tHMGR is).
+//   productInhibition — competitive inhibition AT THE ACTIVE SITE (e.g. MVK by prenyl-PPs).
+//                     A property of the enzyme: applies to native AND recombinant copies
+//                     alike. Only a feedback-RESISTANT variant (FBR) escapes.
 const ENZYMES = [
-  {id:'thiolase',     name:'Thiolase + HMGS', rxn:'acetyl-CoA → HMG-CoA', kind:'endo', feedback:true,
-    note:'Condenses acetyl-CoA into the MVA pathway. Lumped thiolase + HMG-CoA synthase.'},
-  {id:'hmgr',         name:'HMGR', rxn:'HMG-CoA → mevalonate', kind:'endo', feedback:true, cost:'2 NADPH',
-    note:'The classic rate-limiting MVA step. A recombinant feedback-free copy is exactly what "tHMGR" is.'},
-  {id:'mva_lower',    name:'MVK · PMK · MVD', rxn:'mevalonate → IPP', kind:'endo', feedback:true, cost:'3 ATP',
-    note:'Lower MVA pathway, lumped. Turns mevalonate into the first C5 building block.'},
+  {id:'thiolase',     name:'Thiolase + HMGS', rxn:'acetyl-CoA → HMG-CoA', kind:'endo', regFeedback:true, cost:'~3 acetyl-CoA',
+    note:'Condenses acetyl-CoA into the MVA pathway. Lumped thiolase + HMG-CoA synthase. Draws on the shared acetyl-CoA pool — competes with FAS. PROXY kinetics — no insect data.'},
+  {id:'hmgr',         name:'HMGR', rxn:'HMG-CoA → mevalonate', kind:'endo', regFeedback:true, cost:'2 NADPH',
+    note:'The classic rate-limiting MVA step. Regulation is transcriptional/ERAD/AMPK, so a recombinant truncated copy (tHMGR) genuinely escapes it. Consumes 2 NADPH from the shared pool — competes with FAS. PROXY kinetics.'},
+  {id:'mva_lower',    name:'MVK · PMK · MVD', rxn:'mevalonate → IPP', kind:'endo', productInhibition:true, variant:true, variants:['WT','FBR'], cost:'3 ATP',
+    note:'Lower MVA, lumped on MVK. MVK is competitively inhibited AT THE ATP SITE by GPP/FPP/GGPP — a property of the enzyme, NOT escaped by a strong promoter. Overexpressing NATIVE MVK stays throttled when prenyl-PPs are high; only a feedback-resistant (FBR) mutant releases it. This is the cisgenic-vs-engineered decision. MVK Km/Ki are insect-direct (AaMVK).'},
   {id:'idi',          name:'IDI', rxn:'IPP ⇌ DMAPP', kind:'endo', keyUnknown:true,
-    note:'Interconverts the two C5 units. INSECT ACTIVITY IS UNKNOWN — the key uncertainty. Weak IDI + isoprenol feed starves the DMAPP primer; prenol feed rescues it.'},
+    note:'Interconverts the two C5 units. INSECT ACTIVITY IS UNKNOWN — the key uncertainty. Keq differs insect (0.4–0.7) vs microbial host (2–5) — toggle it. Weak IDI + isoprenol feed starves the DMAPP primer; prenol feed rescues it.'},
   {id:'fpps',         name:'FPPS', rxn:'IPP + DMAPP → GPP → FPP', kind:'endo',
-    note:'Builds the C10/C15 prenyl diphosphates.'},
+    note:'Builds the C10/C15 prenyl diphosphates. Allylic preference GPP>DMAPP>IPP (Aedes/Drosophila, qualitative — no absolute Km).'},
   {id:'ggpps_native', name:'Native GGPPS', rxn:'FPP + IPP → GGPP', kind:'endo',
-    note:'BSF\'s own GGPP synthase (Drosophila quemao-type). Low baseline.'},
+    note:'BSF\'s own GGPP synthase (Drosophila quemao-type). FPP-preferring, product-inhibited by GGPP. Low baseline.'},
   {id:'ck',           name:'Choline kinase (IUP)', rxn:'prenol/isoprenol → mono-P', kind:'hetero', cost:'1 ATP',
-    note:'IUP step 1. BSF has NO native route from fed isopentenols into the pathway — you must add this. Rate-limiting (high Km for the alcohol). Needs IPK downstream or the mono-phosphate dead-ends.'},
+    note:'IUP step 1. BSF has NO native route from fed isopentenols into the pathway — you must add this. Rate-limiting (high, mM-range Km for the alcohol; strong prenol>isoprenol kcat asymmetry). Needs IPK downstream or the mono-phosphate dead-ends.'},
   {id:'ipk',          name:'IPK (IUP)', rxn:'mono-P → IPP/DMAPP', kind:'hetero', cost:'1 ATP',
-    note:'IUP step 2 (isopentenyl phosphate kinase). Fast. With CK, lets fed prenol→DMAPP and isoprenol→IPP, bypassing the whole MVA pathway.'},
+    note:'IUP step 2 (isopentenyl phosphate kinase). Fast. With CK, lets fed prenol→DMAPP and isoprenol→IPP, bypassing the whole MVA pathway. Consumes NO acetyl-CoA carbon and NO NADPH — only ATP. That is the IUP\'s whole point.'},
   {id:'saggpps',      name:'SaGGPPs', rxn:'FPP/DMAPP → GGPP', kind:'hetero',
-    note:'Engineered GGPP synthase — the "flow restrictor". Can also run a DMAPP-direct route. Too strong + WT cyclase → lycopene pile-up.'},
-  {id:'carrp',        name:'CarRP', rxn:'2 GGPP → phytoene; lycopene → β-carotene', kind:'hetero', variant:true,
-    note:'Bifunctional phytoene synthase + lycopene cyclase. We use the Y27R variant (low substrate inhibition). WT cyclase chokes when lycopene builds up.'},
+    note:'Engineered GGPP synthase — the "flow restrictor". Can also run a DMAPP-direct route (DMAPP + 3 IPP → GGPP), which only runs with IPP in genuine excess. Too strong + WT cyclase → lycopene pile-up.'},
+  {id:'carrp',        name:'CarRP', rxn:'2 GGPP → phytoene; lycopene → β-carotene', kind:'hetero', variant:true, variants:['Y27R','WT'],
+    note:'Bifunctional phytoene synthase + lycopene cyclase. We use the Y27R variant (low substrate inhibition). WT cyclase chokes when lycopene builds up (substrate inhibition — mechanism well-evidenced, Ma 2022; numeric Ki unmeasured).'},
   {id:'carb',         name:'CarB', rxn:'phytoene → lycopene', kind:'hetero',
-    note:'Phytoene desaturase (4 steps lumped). Often slow — a common internal bottleneck.'},
+    note:'Phytoene desaturase (4 steps lumped). Often slow — a common internal bottleneck. PROXY kinetics.'},
   {id:'crtwz',        name:'CrtW-Z', rxn:'β-carotene → astaxanthin', kind:'hetero', cost:'O₂ + reductant',
-    note:'Ketolase/hydroxylase fusion. Works far better when targeted to lipid droplets (raise accessibility).'},
+    note:'Ketolase/hydroxylase fusion. Works far better when targeted to lipid droplets (raise accessibility); fusion > separate. Lipophilic substrate ⇒ partitioning matters.'},
 ];
 const ENZ = Object.fromEntries(ENZYMES.map(e=>[e.id,e]));
 
 // Fixed baseline turnover (kcat·[E]baseline) per reaction — relative units.
 const V = {
-  thiolase:2.5, hmgr:1.2, mva:1.2, ck:1.5, idi:3.0, fpps:2.0, ggn:1.5, saF:1.5, saD:1.5,
-  psy:1.0, carb:0.5, lcy:0.45, crtwz:0.4,
+  thiolase:2.5, hmgr:1.4, mva:1.6, ck:1.5, idi:3.0, fpps:2.0, ggn:1.5, saF:1.5, saD:1.5,
+  psy:1.1, carb:0.5, lcy:0.5, crtwz:0.4, fas:1.0,
 };
-// ⚠ DEEP-RESEARCH (gap A1): KM.gen is a single generic Km standing in for nearly every prenyl step — the
-// biggest single source of non-predictiveness. Real Km values span orders of magnitude and decide which
-// steps saturate. Replacing even 2–3 with measured values (+ one absolute anchor) would calibrate the rest.
-const KM = { gen:1.0, ck_prenol:5.0, ck_iso:2.0 };
-const LCY = { Km:2.0, Ki_WT:1.5, Ki_Y27R:1e6 };  // cyclase substrate inhibition v=V·L/(Km+L+L²/Ki)
+
+// ════════════════════════════════════════════════════════════════════════
+//  PARAMETERS — real ranges, source-tagged [§2 / §6]
+// ════════════════════════════════════════════════════════════════════════
+// IMPORTANT honesty note: the steady-state solver runs in RELATIVE pool units. We do NOT
+// pretend the pools are calibrated to µM (the K_DIL device makes pools semi-arbitrary — see
+// §7). What is real here is (a) the RELATIVE structure of the MVK Ki's, taken straight from
+// insect AaMVK data, and (b) the [lo,hi] SPREAD of every constant, which the ensemble
+// (§4) samples. Prenyl-PP pools sit sub-µM–low-µM, so for those sub-µM species we use the
+// real µM Ki numbers directly as model-scale values; MVA-trunk Km's that would be tens of µM
+// (mevalonate, ATP) are kept as model-scale PROXIES and the real µM range is shown only as
+// provenance in the table. The single absolute anchor (Günther β-carotene, ~tens of ng/larva)
+// scales the REPORTED output flux only — it is not a calibration.
+//
+// conf: 'high' = insect-direct · 'med' = proxy from microbial/related · 'gap' = no data.
+const PARAM = {
+  mvk_Km_ATP:  {disp:'110–170', unit:'µM', src:'AaMVK (Aedes, insect-direct)', conf:'high'},
+  mvk_Km_mev:  {disp:'70–110',  unit:'µM', src:'AaMVK (Aedes, insect-direct)', conf:'high'},
+  mvk_Ki_FPP:  {disp:'0.24–0.64', unit:'µM', src:'AaMVK (Aedes, insect-direct)', conf:'high'},
+  mvk_Ki_GPP:  {disp:'0.27–0.83', unit:'µM', src:'AaMVK (Aedes, insect-direct)', conf:'high'},
+  mvk_Ki_GGPP: {disp:'0.74–1.12', unit:'µM', src:'AaMVK (Aedes, insect-direct)', conf:'high'},
+  mvk_Ki_C5:   {disp:'none (class-I)', unit:'—', src:'AaMVK — no IPP/DMAPP inhibition', conf:'high'},
+  idi_Keq_ins: {disp:'0.4–0.7',  unit:'—', src:'Aedes (insect)', conf:'med'},
+  idi_Keq_mic: {disp:'2–5',      unit:'—', src:'E. coli / yeast host', conf:'med'},
+  pmk_Km:      {disp:'~98 / ~885', unit:'µM', src:'yeast PMK (ATP / MVP)', conf:'med'},
+  ck_Km:       {disp:'~1100 / ~4500', unit:'µM', src:'yeast ScCK (prenol / isoprenol)', conf:'med'},
+  ck_kcat:     {disp:'~1.1 / ~14.7', unit:'s⁻¹', src:'yeast ScCK (prenol / isoprenol)', conf:'med'},
+  lcy_Ki:      {disp:'mech real, value unmeasured', unit:'µM', src:'Mucor/yeast cyclase (Ma 2022)', conf:'mech'},
+  saggpps_Km:  {disp:'no Km/kcat', unit:'—', src:'yeast host (DMAPP-direct route real)', conf:'gap'},
+  trunk:       {disp:'no insect kinetics', unit:'—', src:'thiolase/AACT/HMGS/MVD/HMGR', conf:'gap'},
+};
+
+// Working (model-scale) constants WITH [lo,hi] ranges — these are what the ensemble samples.
+// Each carries lo/hi (the spread) and a midpoint mid() used for the fast single-point view.
+function rng(lo,hi){ return {lo,hi, mid:()=>(lo+hi)/2}; }
+const ENS = {
+  km_gen:   rng(0.6, 1.6),   // PROXY generic Km — biggest single uncertainty
+  km_mev:   rng(0.8, 1.6),   // PROXY model-scale Km for mevalonate MM (real AaMVK 70–110 µM, provenance only)
+  ki_FPP:   rng(0.24, 0.64), // insect-direct, used directly as model-scale Ki (sub-µM prenyl pools)
+  ki_GPP:   rng(0.27, 0.83), // insect-direct
+  ki_GGPP:  rng(0.74, 1.12), // insect-direct
+  keq_ins:  rng(0.4, 0.7),   // insect IDI equilibrium
+  keq_mic:  rng(2.0, 5.0),   // microbial-host IDI equilibrium
+  lcy_Km:   rng(1.6, 2.6),   // cyclase Km — mechanism real, value unmeasured
+  lcy_KiWT: rng(0.06, 0.14), // cyclase substrate-inhibition Ki (WT) — low Ki ⇒ choke when lycopene builds; value unmeasured
+  psy_K:    rng(0.09, 0.20), // phytoene synthase half-saturation (cooperative in GGPP) — GGPP-pool scale
+  saD_K:    rng(0.08, 0.22), // SaGGPPs DMAPP-direct half-saturation in IPP — IPP-pool scale
+  carb_Km:  rng(0.8, 1.6),   // PROXY desaturase Km
+};
+const LCY = { Ki_Y27R:1e6 };  // Y27R removes substrate inhibition; v=V·L/(Km+L+L²/Ki)
+const KM_FEED = { ck_prenol:5.0, ck_iso:2.0 };  // alcohol Km asymmetry (prenol weaker substrate)
 const SINK = { squalene:2.0 };
-// ⚠ DEEP-RESEARCH (gap A3): K_DIL is a numerical device (first-order turnover) so end-products reach a steady
+// [§7 / gap A3] K_DIL is a numerical device (first-order turnover) so end-products reach a steady
 // state — NOT biology. It makes the end-product POOLS semi-arbitrary; trust the flux to product, not the pool.
 const K_DIL = 0.05;
-// ⚠ DEEP-RESEARCH (gap A4): feedback is a cartoon — FPP as the sole signal, only on native enzymes. Whether
-// BSF MVA has real product feedback (and via farnesol/JH/sterol?) is open and sets how much "pull" helps.
-const FB_REF = 0.10;   // FPP scale at which native feedback bites
+// [gap A4] regFeedback is a cartoon — FPP as the sole transcriptional signal, only on native copies.
+const FB_REF = 0.10;   // FPP scale at which native transcriptional feedback bites
+// [§5] shared cofactor pools — bounded inputs that MVA and FAS compete for.
+const ACOA_IN = 12.0;      // bounded acetyl-CoA supply (relative) — soft competition; bites under heavy push / high FAS
+const NADPH_IN = 12.0;     // bounded NADPH supply (relative)
+const ACOA_PER_HMG = 1.0;  // lumped acetyl-CoA consumed per HMG-CoA (biochem ~3; lumped here)
+const NADPH_PER_FAS = 1.8; // NADPH per unit FAS carbon (FAS ~14 NADPH / 8 acetyl-CoA)
+const KM_COF = 0.8;        // half-saturation of the shared pools
 
 // Native expression defaults by host (the "from data" baseline; editable per enzyme).
 const NATIVE_DEF = {
@@ -309,7 +403,7 @@ function blankEnzymeState(){
   const o={};
   ENZYMES.forEach(e=>{
     o[e.id] = e.kind==='endo' ? { nativeExpr:1, cassettes:[] } : { cassettes:[] };
-    if(e.variant) o[e.id].variant='Y27R';
+    if(e.variant) o[e.id].variant = (e.variants?e.variants[0]:'Y27R');
   });
   return o;
 }
@@ -334,7 +428,10 @@ function baseState(){
   STATE.prenol_in=0; STATE.isoprenol_in=0; STATE.feedstock_viability=1;
   STATE.k_dolichol=0.1; STATE.k_CoQ=0.15; STATE.k_farn=0.05; STATE.k_ggpren=0.05;
   STATE.feedback_strength=1; STATE.lipid_priority=1; STATE.accessibility=0.2;
-  STATE.saggpps_dmapp=true; STATE.Keq=0.25;
+  STATE.saggpps_dmapp=true;
+  STATE.idi_host='insect';     // [§6] IDI equilibrium toggle: insect (0.4–0.7) vs microbial host (2–5)
+  STATE.fas_draw=1;            // [§5] FAS / lipogenesis draw on the shared acetyl-CoA + NADPH pools
+  STATE.atp_headroom=3;        // [§5] ATP headroom that the IUP's 2-ATP-per-C5 cost is gated against
   setNativeDefaults('insect');
 }
 function cassetteLevel(id){ const c=STATE.cassettes.find(c=>c.id===id); return c?c.level:1; }
@@ -349,9 +446,11 @@ function effExpr(id, x, P){
   const e=STATE.enzymes[id], def=ENZ[id];
   let E;
   if(def.kind==='endo'){
+    // [§1] regFeedback = transcriptional/ERAD throttle on NATIVE copies; recombinant copies
+    // behind a strong promoter escape it (added outside the fb term). productInhibition is NOT
+    // applied here — it is an active-site effect handled in rates() on the total (native+recomb) rate.
     let fb=1;
-    if(def.feedback && P.feedback_strength>0){ const FPP=x[5]; fb=1/(1+P.feedback_strength*Math.pow(FPP/FB_REF,2)); }
-    // native (feedback-limited) + any recombinant copies (feedback-free, summed over cassettes)
+    if(def.regFeedback && P.feedback_strength>0){ const FPP=x[5]; fb=1/(1+P.feedback_strength*Math.pow(FPP/FB_REF,2)); }
     E = e.nativeExpr*fb + casLevels(id);
   } else {
     E = casLevels(id);   // heterologous: exists only if in ≥1 cassette
@@ -361,34 +460,62 @@ function effExpr(id, x, P){
 
 function rates(x, P){
   const [HMG,MEV,IPP,DMAPP,GPP,FPP,GGPP,PHY,LYC,BCAR]=x;
-  const Kg=KM.gen, mm=(s,Vm,Km)=>Vm*s/(Km+s), bi=(a,b,Vm,Ka,Kb)=>Vm*(a/(Ka+a))*(b/(Kb+b));
+  const K=P.K, mm=(s,Vm,Km)=>Vm*s/(Km+s), bi=(a,b,Vm,Ka,Kb)=>Vm*(a/(Ka+a))*(b/(Kb+b));
   const E=id=>effExpr(id,x,P), r={};
-  r.thiolase = E('thiolase')*V.thiolase*P.acetylAvail;          // acetyl-CoA → HMG-CoA
-  r.hmgr = mm(HMG, E('hmgr')*V.hmgr, Kg);                       // → mevalonate, 2 NADPH
-  r.mva  = mm(MEV, E('mva_lower')*V.mva, Kg);                   // → IPP, 3 ATP
-  // IUP bypass: only works if BOTH choline kinase and IPK are expressed (BSF has
-  // no native isopentenol→prenyl-P route). CK is rate-limiting (high Km); need both.
+
+  // ── [§5] shared cofactor pools (algebraic conservation, capacity-demand based) ──────────
+  // acetyl-CoA and NADPH are bounded shared inputs that the MVA entry and the FAS sink
+  // compete for. Availability is set by total capacity DEMAND vs the bounded SUPPLY, so each
+  // draw genuinely throttles the other and either pool CAN become the limiting step in the
+  // ranking. The IUP route draws on NEITHER (only ATP) — that is its whole point.
+  const thioPot = E('thiolase')*V.thiolase;   // acetyl-CoA-drawing MVA entry capacity
+  const hmgrPot = E('hmgr')*V.hmgr;           // NADPH-drawing capacity (2 NADPH/mevalonate)
+  const fasPot  = P.fas_draw*V.fas;           // FAS / lipogenesis draw (tunable, not maximal)
+  const acoaDemand  = ACOA_PER_HMG*thioPot + fasPot;
+  const nadphDemand = 2*hmgrPot + NADPH_PER_FAS*fasPot;
+  const acoaAvail  = ACOA_IN /(ACOA_IN  + acoaDemand);   // 0..1, ↓ when total draw > supply
+  const nadphAvail = NADPH_IN/(NADPH_IN + nadphDemand);
+  r.fas = fasPot*acoaAvail;                              // FAS carbon actually diverted (reporting)
+  r.acoaAvail=acoaAvail; r.nadphAvail=nadphAvail; r.lipidShare=r.fas/(r.fas+thioPot*acoaAvail+1e-9);
+
+  r.thiolase = thioPot*acoaAvail;                              // acetyl-CoA → HMG-CoA (pool-gated entry)
+  r.hmgr = mm(HMG, hmgrPot, K.km_gen)*nadphAvail;              // → mevalonate, NADPH-gated
+  // [§1] MVK competitive product inhibition AT THE ATP SITE by GPP/FPP/GGPP — applies to the
+  // TOTAL mva_lower rate (native + recombinant alike). Only the feedback-resistant (FBR)
+  // variant escapes it. Class-I MVK: NO IPP/DMAPP inhibition. Ki's are insect-direct (AaMVK).
+  const mvkFBR = STATE.enzymes.mva_lower.variant==='FBR';
+  const mvkInh = mvkFBR ? 1 : 1/(1 + FPP/K.ki_FPP + GPP/K.ki_GPP + GGPP/K.ki_GGPP);
+  r.mva  = mm(MEV, E('mva_lower')*V.mva, K.km_mev)*mvkInh;     // → IPP, 3 ATP
+  // IUP bypass: only works if BOTH choline kinase and IPK are expressed (BSF has no native
+  // isopentenol→prenyl-P route). [§5] gated by ATP headroom — the 2-ATP-per-C5 cost is the
+  // IUP's real in-vivo limiter; with no headroom the route is throttled (not free flux).
   const iup = Math.min(E('ck'), E('ipk'));
-  r.prenolCK = iup*V.ck*P.feedstock_viability*P.prenol_in/(KM.ck_prenol+P.prenol_in);   // → DMAPP, 2 ATP
-  r.isoCK    = iup*V.ck*P.feedstock_viability*P.isoprenol_in/(KM.ck_iso+P.isoprenol_in); // → IPP, 2 ATP
-  r.idi = E('idi')*V.idi*(IPP - DMAPP/P.Keq)/(Kg+IPP+DMAPP);   // net IPP→DMAPP (signed)
-  r.fpps1 = bi(DMAPP,IPP, E('fpps')*V.fpps, Kg,Kg);            // → GPP
-  r.fpps2 = bi(GPP,IPP,   E('fpps')*V.fpps, Kg,Kg);            // → FPP
-  r.ggn = bi(FPP,IPP, E('ggpps_native')*V.ggn, Kg,Kg);
-  r.saF = bi(FPP,IPP, E('saggpps')*V.saF, Kg,Kg);
-  // ⚠ DEEP-RESEARCH (gap B1): GGPP = DMAPP + 3 IPP via 3 sequential condensations. The IPP balance below
-  // subtracts 3*r.saD (stoichiometry correct), but this rate law is only FIRST-order in IPP — it understates
-  // how hard this flux leans on the IPP pool. Consider IPP^n, or modelling the 3 condensations explicitly.
-  r.saD = (STATE.saggpps_dmapp?1:0)*bi(DMAPP,IPP, E('saggpps')*V.saD, Kg,Kg);  // DMAPP + 3 IPP → GGPP
+  const prenolPot = iup*V.ck*P.feedstock_viability*P.prenol_in/(KM_FEED.ck_prenol+P.prenol_in);   // → DMAPP, 2 ATP
+  const isoPot    = iup*V.ck*P.feedstock_viability*P.isoprenol_in/(KM_FEED.ck_iso+P.isoprenol_in); // → IPP, 2 ATP
+  const atpFactor = P.atp_headroom/(P.atp_headroom + 2*(prenolPot+isoPot));   // soft penalty: 2 ATP per C5
+  r.atpFactor=atpFactor;
+  r.prenolCK = prenolPot*atpFactor;
+  r.isoCK    = isoPot*atpFactor;
+  r.idi = E('idi')*V.idi*(IPP - DMAPP/K.keq)/(K.km_gen+IPP+DMAPP);   // net IPP→DMAPP (signed); Keq host-dependent
+  r.fpps1 = bi(DMAPP,IPP, E('fpps')*V.fpps, K.km_gen,K.km_gen);      // → GPP
+  r.fpps2 = bi(GPP,IPP,   E('fpps')*V.fpps, K.km_gen,K.km_gen);      // → FPP
+  r.ggn = bi(FPP,IPP, E('ggpps_native')*V.ggn, K.km_gen,K.km_gen);
+  r.saF = bi(FPP,IPP, E('saggpps')*V.saF, K.km_gen,K.km_gen);
+  // [§3.2] SaGGPPs DMAPP-direct route: DMAPP + 3 IPP → GGPP. Effective kinetic order in IPP
+  // raised to n≈2 (Hill) — the route only runs with IPP in genuine EXCESS, which the old
+  // first-order law hid. Couples tightly to the IDI question (IDI sets the DMAPP:IPP split).
+  r.saD = (STATE.saggpps_dmapp?1:0)*E('saggpps')*V.saD*(DMAPP/(K.km_gen+DMAPP))*(IPP*IPP/(K.saD_K*K.saD_K+IPP*IPP));
   r.dol=P.k_dolichol*FPP; r.coq=P.k_CoQ*FPP; r.farn=Math.max(P.k_farn,0.01)*FPP;
   r.squal=P.squalene_on?SINK.squalene*FPP:0; r.ggpren=Math.max(P.k_ggpren,0.01)*GGPP;
-  // ⚠ DEEP-RESEARCH (gap B2): consumes 2 GGPP but rate is first-order in GGPP, not second — understates
-  // sensitivity to GGPP depletion. ⚠ (gap B5) PSY/cyclase kcat ratio (V.psy:V.lcy) is tuned, not measured.
-  r.psy = mm(GGPP, E('carrp')*V.psy, Kg);                      // 2 GGPP → phytoene
-  r.carb= mm(PHY, E('carb')*V.carb, Kg);
-  const Ki = STATE.enzymes.carrp.variant==='WT' ? LCY.Ki_WT : LCY.Ki_Y27R;
-  r.lcy = E('carrp')*V.lcy*LYC/(LCY.Km + LYC + LYC*LYC/Ki);    // substrate-inhibited cyclase
-  r.astax = mm(BCAR, E('crtwz')*V.crtwz*P.accessibility, Kg);
+  // [§3.1] 2 GGPP → phytoene: cooperative (Hill n=2) in GGPP, so phytoene synthesis is
+  // appropriately sensitive to GGPP depletion (the old first-order law under-ranked GGPP supply).
+  r.psy = E('carrp')*V.psy*(GGPP*GGPP)/(K.psy_K*K.psy_K + GGPP*GGPP);   // 2 GGPP → phytoene
+  r.carb= mm(PHY, E('carb')*V.carb, K.carb_Km);
+  // [§3.3] substrate-inhibited cyclase v=V·L/(Km+L+L²/Ki) — mechanism well-evidenced (Ma 2022);
+  // numeric Ki unmeasured. Y27R removes the inhibition; WT chokes when lycopene builds up.
+  const Ki = STATE.enzymes.carrp.variant==='WT' ? K.lcy_KiWT : LCY.Ki_Y27R;
+  r.lcy = E('carrp')*V.lcy*LYC/(K.lcy_Km + LYC + LYC*LYC/Ki);
+  r.astax = mm(BCAR, E('crtwz')*V.crtwz*P.accessibility, K.km_gen);   // accessibility carries lipid-droplet partition
   return r;
 }
 
@@ -439,32 +566,90 @@ function solveSS(P, x0){
 const astaxOn = ()=>inAnyCas('crtwz');
 const targetFlux=(r)=> astaxOn() ? r.astax : r.lcy;
 
-// leverage = flux control coefficients, per active enzyme
-function leverage(P, ss){
-  const J0=targetFlux(ss.r);
-  const active=ENZYMES.filter(e=>{ const s=STATE.enzymes[e.id];
+// the enzymes that are actually present / running
+function activeEnzymes(){
+  return ENZYMES.filter(e=>{ const s=STATE.enzymes[e.id];
     return e.kind==='endo' ? (s.nativeExpr>0||inAnyCas(e.id)) : inAnyCas(e.id); });
-  const out=[]; let sum=0;
+}
+// flux-control coefficients for one parameter point (1% finite difference per enzyme)
+function fccFor(P, x0, active){
+  const ss=solveSS(P,x0), J0=targetFlux(ss.r), m={};
   for(const e of active){
-    if(J0<=1e-12){ out.push([e.id,0]); continue; }
+    if(J0<=1e-12){ m[e.id]=0; continue; }
     const P2=Object.assign({},P,{boost:Object.assign({},P.boost)}); P2.boost[e.id]=1.01;
     const J2=targetFlux(solveSS(P2,ss.x).r);
-    const fcc=(J2-J0)/J0/0.01; out.push([e.id,fcc]); sum+=fcc;
+    m[e.id]=(J2-J0)/J0/0.01;
   }
-  out.sort((a,b)=>b[1]-a[1]);
-  return {out, sum, J0};
+  return {m, x:ss.x, J0};
+}
+// leverage = single-point FCC ranking (the fast default view)
+function leverage(P, ss){
+  const active=activeEnzymes(), {m,J0}=fccFor(P, ss.x, active);
+  const out=active.map(e=>[e.id, m[e.id]]).sort((a,b)=>b[1]-a[1]);
+  return {out, J0};
 }
 
-function resolveP(){
-  const P={ boost:{}, Keq:STATE.Keq, feedback_strength:STATE.feedback_strength,
+// ════════════════════════════════════════════════════════════════════════
+//  [§4] ENSEMBLE SENSITIVITY — sample every parameter from its [lo,hi] range,
+//  recompute the steady state + FCCs each draw, report the DISTRIBUTION of each
+//  enzyme's control coefficient, and classify "engineer next" (robust top) vs
+//  "measure first" (rank unstable to the plausible parameter range).
+// ════════════════════════════════════════════════════════════════════════
+function runEnsemble(nDraws){
+  const active=activeEnzymes();
+  if(!active.length) return {stats:[], n:0};
+  const rand=e=>e.lo + Math.random()*(e.hi-e.lo);
+  const vals={}, ranks={}; active.forEach(e=>{ vals[e.id]=[]; ranks[e.id]=[]; });
+  let warm = lastX;
+  for(let d=0; d<nDraws; d++){
+    const P=resolveP(rand);                    // draw a fresh parameter set
+    const {m,x}=fccFor(P, warm, active); warm=x; // warm-start from the previous draw
+    const ordered=active.map(e=>[e.id, m[e.id]]).sort((a,b)=>b[1]-a[1]);
+    ordered.forEach((o,i)=>{ vals[o[0]].push(o[1]); ranks[o[0]].push(i+1); });
+  }
+  const topN=Math.max(2, Math.ceil(active.length*0.3));   // "near the top" = top ~third of active steps
+  const stats=active.map(e=>{
+    const v=vals[e.id].slice().sort((a,b)=>a-b), n=v.length||1;
+    const q=p=>v[Math.min(n-1,Math.max(0,Math.round(p*(n-1))))];
+    const rk=ranks[e.id], meanRank=rk.reduce((s,a)=>s+a,0)/rk.length;
+    const topFrac=rk.filter(r=>r<=topN).length/rk.length;   // fraction of draws this step is near the top
+    const rankSpread=Math.max(...rk)-Math.min(...rk);
+    return {id:e.id, med:q(0.5), lo:q(0.1), hi:q(0.9), meanRank, topFrac, rankSpread};
+  }).sort((a,b)=>b.med-a.med);
+  stats.forEach(s=>{
+    // robustly near the top whatever the true parameters → recommend;
+    // near the top in SOME draws but not others (rank flips across the ranges) → measure first.
+    s.cls = (s.topFrac>=0.75 && s.med>0.05) ? 'engineer'
+          : (s.med>0.03 && s.topFrac>=0.15) ? 'measure'
+          : 'minor';
+  });
+  return {stats, n:nDraws, topN};
+}
+
+// Build a working (model-scale) kinetic-constant set. Default sampler = midpoint (fast single
+// view); the ensemble (§4) passes a random sampler to draw from each [lo,hi] range.
+function buildK(sampler){
+  const g = sampler || (e=>e.mid());
+  const keqKey = STATE.idi_host==='microbial' ? 'keq_mic' : 'keq_ins';
+  return {
+    km_gen:g(ENS.km_gen), km_mev:g(ENS.km_mev),
+    ki_FPP:g(ENS.ki_FPP), ki_GPP:g(ENS.ki_GPP), ki_GGPP:g(ENS.ki_GGPP),
+    keq:g(ENS[keqKey]),
+    lcy_Km:g(ENS.lcy_Km), lcy_KiWT:g(ENS.lcy_KiWT),
+    psy_K:g(ENS.psy_K), saD_K:g(ENS.saD_K), carb_Km:g(ENS.carb_Km),
+  };
+}
+function resolveP(sampler){
+  const P={ boost:{}, feedback_strength:STATE.feedback_strength,
     feedstock_viability:STATE.feedstock_viability, prenol_in:STATE.prenol_in, isoprenol_in:STATE.isoprenol_in,
     k_dolichol:STATE.k_dolichol, k_CoQ:STATE.k_CoQ, k_farn:STATE.k_farn, k_ggpren:STATE.k_ggpren,
-    accessibility:STATE.accessibility, squalene_on:STATE.organism==='yeast' };
-  // coarse acetyl-CoA competition between MVA supply and storage lipid
-  const sp=['thiolase','hmgr','mva_lower'].reduce((s,id)=>{ const e=STATE.enzymes[id];
-    return s + e.nativeExpr + casLevels(id); },0);
-  P.acetylAvail = sp/(sp+STATE.lipid_priority);
-  P.lipidShare  = STATE.lipid_priority/(sp+STATE.lipid_priority);
+    fas_draw:STATE.fas_draw, atp_headroom:Math.max(0,STATE.atp_headroom),
+    squalene_on:STATE.organism==='yeast' };
+  P.K = buildK(sampler);
+  // [§5/§8] lipid droplets sequester the lipophilic product and aid partitioning — so the FAS
+  // draw also lifts CrtW-Z accessibility. With the pool competition above, this gives FAS a
+  // genuine SWEET SPOT: too little → poor partitioning; too much → starves acetyl-CoA / NADPH.
+  P.accessibility = Math.min(1, STATE.accessibility + 0.3*STATE.fas_draw/(1+STATE.fas_draw));
   return P;
 }
 
@@ -551,11 +736,25 @@ function diagnose(x, r, P, lev){
   const [HMG,MEV,IPP,DMAPP,GPP,FPP,GGPP,PHY,LYC,BCAR,ASTA]=x;
   const msgs=[], mean=x.reduce((s,a)=>s+a,0)/x.length||1, hi=v=>v>1.8*mean, lo=v=>v<0.4*mean;
   const top=lev.out[0], prod=astaxOn()?'astaxanthin':'β-carotene';
-  const Ki=STATE.enzymes.carrp.variant==='WT'?LCY.Ki_WT:LCY.Ki_Y27R;
+  const wtCyc=STATE.enzymes.carrp.variant==='WT';
   if((P.prenol_in>0||P.isoprenol_in>0) && !iupActive())
     msgs.push(['warn','<b>You\'re feeding isopentenols but the IUP module isn\'t built.</b> BSF can\'t convert prenol/isoprenol on its own — add choline kinase + IPK to a cassette, or none of the feed is used.']);
-  if(LYC>1.5 && LYC>1.3*BCAR && Ki<1e5)
+  if(iupActive() && (P.prenol_in>0||P.isoprenol_in>0) && r.atpFactor<0.6)
+    msgs.push(['warn','<b>IUP is ATP-throttled.</b> The 2-ATP-per-C5 cost is outrunning the ATP headroom — fed isopentenols aren\'t fully converted. Raise ATP headroom or feed less.']);
+  if(LYC>1.5 && LYC>1.3*BCAR && wtCyc)
     msgs.push(['warn','<b>Lycopene is piling up.</b> The WT cyclase chokes on its own substrate. Switch CarRP to Y27R, or ease off SaGGPPs so lycopene stays low.']);
+  // [§1] MVK active-site product inhibition status
+  if(STATE.enzymes.mva_lower.nativeExpr+casLevels('mva_lower')>0){
+    const K=P.K, mvkInh=1/(1+FPP/K.ki_FPP+GPP/K.ki_GPP+GGPP/K.ki_GGPP), fbr=STATE.enzymes.mva_lower.variant==='FBR';
+    if(!fbr && mvkInh<0.65)
+      msgs.push(['warn',`<b>MVK is product-inhibited</b> (running at ${(mvkInh*100).toFixed(0)}% — GPP/FPP/GGPP compete at its ATP site). Overexpressing the <i>native</i> MVK stays throttled; only a <b>feedback-resistant (FBR) MVK variant</b> escapes it. Switch the MVK variant to FBR to see the difference.`]);
+    else if(fbr && mvkInh<0.65)
+      msgs.push(['ok',`<b>FBR MVK is bypassing the prenyl-PP inhibition</b> that would hold the native enzyme at ${(mvkInh*100).toFixed(0)}% — this is the engineered-vs-cisgenic lever.`]);
+  }
+  if(r.nadphAvail<0.5 && STATE.enzymes.hmgr.nativeExpr+casLevels('hmgr')>0)
+    msgs.push(['warn','<b>NADPH-limited.</b> HMGR and FAS are both draining the shared NADPH pool — pushing HMGR harder won\'t help until reductant supply or FAS draw gives. (HMGR costs 2 NADPH/mevalonate; IUP costs none.)']);
+  if(r.acoaAvail<0.5)
+    msgs.push(['warn','<b>Acetyl-CoA-limited.</b> The MVA entry and FAS are competing for the shared acetyl-CoA pool. Ease the FAS draw, or bypass the carbon entirely with the IUP feed (consumes no acetyl-CoA).']);
   if(hi(GGPP)&&lo(PHY)) msgs.push(['warn','<b>GGPP backs up, little phytoene.</b> Phytoene synthase (CarRP) is limiting — boost it.']);
   if((hi(IPP)||hi(DMAPP))&&lo(GGPP)&&GGPP<FPP) msgs.push(['warn','<b>C5/C15 units accumulating, GGPP low.</b> The prenyltransferases (FPPS / GGPPS / SaGGPPs) can\'t keep up — add or boost them.']);
   if(DMAPP<0.3*mean&&IPP>1.5*mean&&r.saD<0.05*Math.max(r.saF,1e-6)+1e-6&&(P.isoprenol_in>0||STATE.enzymes.mva_lower.nativeExpr>0))
@@ -563,8 +762,8 @@ function diagnose(x, r, P, lev){
   if(lo(IPP)&&lo(DMAPP)&&lo(FPP)&&lo(GGPP)&&targetFlux(r)<0.05)
     msgs.push(['warn','<b>Everything upstream is thin — supply-limited.</b> Express MVA recombinantly (escape feedback) and/or feed prenol/isoprenol.']);
   if(astaxOn()&&hi(BCAR)&&lo(ASTA)) msgs.push(['warn','<b>β-carotene high, astaxanthin low.</b> CrtW-Z can\'t reach its substrate — raise accessibility (target it to lipid droplets).']);
-  if(P.lipidShare>0.7) msgs.push(['warn','<b>Most carbon is still going to storage lipid.</b> Isoprenoid supply is weak relative to the fat-body pull — push MVA harder.']);
-  else if(P.lipidShare<0.25) msgs.push(['ok','<b>Heads-up:</b> the MVA push is now cannibalising lipogenesis (little carbon left for storage lipid).']);
+  if(r.lipidShare>0.7) msgs.push(['warn','<b>Most carbon is still going to storage lipid.</b> Isoprenoid supply is weak relative to the fat-body pull — push MVA harder or ease the FAS draw.']);
+  else if(r.lipidShare<0.2) msgs.push(['ok','<b>Heads-up:</b> the MVA push is now cannibalising lipogenesis (little carbon left for storage lipid — there is a sweet spot, lipid droplets also sequester the product).']);
   if(top&&top[1]>0.05) msgs.unshift(['ok',`<b>Biggest lever: ${ENZ[top[0]].name}</b> (control ${top[1].toFixed(2)}). Boosting it gives the most extra ${prod} right now.`]);
   if(!msgs.length) msgs.push(['ok','No single dominant bottleneck — flux is fairly balanced.']);
   return msgs;
@@ -572,7 +771,11 @@ function diagnose(x, r, P, lev){
 
 let lastX=null;
 function recompute(){
-  const P=resolveP(); const ss=solveSS(P,lastX); lastX=ss.x; const {x,r}=ss;
+  // Cold-start the main solve for DETERMINISM: the cyclase substrate-inhibition term makes the
+  // system bistable, and warm-starting across a big qualitative change (variant / cassette switch)
+  // can trap Newton on the stale branch. One cold solve is cheap; we still cache the result in
+  // lastX so the ensemble (small perturbations, single branch) can warm-start from it.
+  const P=resolveP(); const ss=solveSS(P,null); lastX=ss.x; const {x,r}=ss;
   drawMap(x,r,P);
   const prod=astaxOn()?'astaxanthin':'β-carotene';
   document.getElementById('prodName').textContent=prod;
@@ -583,18 +786,52 @@ function recompute(){
     : '<div class="hint">No active enzymes producing '+prod+' yet.</div>';
   const maxP=Math.max(1e-6,...x);
   document.getElementById('poolBars').innerHTML = SP.map((n,i)=>barRow(n,x[i],x[i]/maxP,false)).join('');
-  const cof=[['ATP · MVA',3*r.mva],['ATP · feed',2*(r.prenolCK+r.isoCK)],['NADPH · HMGR',2*r.hmgr],['O₂ · astax',r.astax]];
+  const cof=[['ATP · MVA',3*r.mva],['ATP · feed',2*(r.prenolCK+r.isoCK)],['NADPH · HMGR',2*r.hmgr],['FAS draw',r.fas],['O₂ · astax',r.astax]];
   const maxC=Math.max(1e-6,...cof.map(c=>c[1]));
-  document.getElementById('cofBars').innerHTML = cof.map(c=>barRow(c[0],c[1],c[1]/maxC,false)).join('');
-  document.getElementById('lipidVal').textContent=(P.lipidShare*100).toFixed(0)+'%';
+  document.getElementById('cofBars').innerHTML = cof.map(c=>barRow(c[0],c[1],c[1]/maxC,false)).join('')
+    + `<div class="bar" style="margin-top:6px"><span class="name">acetyl-CoA avail</span><span class="track"><span class="fill" style="left:0;width:${(r.acoaAvail*100).toFixed(0)}%"></span></span><span class="num">${r.acoaAvail.toFixed(2)}</span></div>`
+    + `<div class="bar"><span class="name">NADPH avail</span><span class="track"><span class="fill" style="left:0;width:${(r.nadphAvail*100).toFixed(0)}%"></span></span><span class="num">${r.nadphAvail.toFixed(2)}</span></div>`;
+  document.getElementById('lipidVal').textContent=(r.lipidShare*100).toFixed(0)+'%';
   document.getElementById('diag').innerHTML = diagnose(x,r,P,lev).map(m=>`<div class="verdict ${m[0]}">${m[1]}</div>`).join('');
   // headline
   const J=targetFlux(r); const top=lev.out[0];
   document.getElementById('headline').innerHTML = J<0.02
     ? `Almost no <b>${prod}</b> is being made. <span style="color:var(--muted)">Supply or an early step is choking the pathway — see the read-out below.</span>`
     : `Making <b>${prod}</b> at <b>${J.toFixed(2)}</b> rel. units. ${top&&top[1]>0.05?`Best next move: boost <b>${ENZ[top[0]].name}</b>.`:`Flux is fairly balanced.`}`;
+  document.getElementById('ensembleBox').style.display='none';   // stale once inputs change
   syncURL();
 }
+
+// [§4] render the ensemble sensitivity result
+function renderEnsemble(res){
+  const box=document.getElementById('ensembleBox'); box.style.display='block';
+  if(!res.stats.length){ document.getElementById('ensBars').innerHTML='<div class="hint">No active enzymes producing product yet.</div>';
+    document.getElementById('ensVerdict').innerHTML=''; return; }
+  const all=res.stats.flatMap(s=>[s.lo,s.hi,s.med]);
+  const span=Math.max(0.05, Math.max(...all.map(Math.abs))), L=-span, R=span;   // symmetric, signed
+  const pos=v=>((v-L)/(R-L))*100;
+  document.getElementById('ensBars').innerHTML = res.stats.map(s=>{
+    const x0=Math.max(0,Math.min(100,pos(s.lo))), x1=Math.max(0,Math.min(100,pos(s.hi)));
+    const xm=Math.max(0,Math.min(100,pos(s.med))), zero=pos(0);
+    return `<div class="ensbar"><span class="name">${ENZ[s.id].name}</span>
+      <span class="track"><span class="ens-axis" style="left:${zero}%"></span>
+        <span class="whisk" style="left:${Math.min(x0,x1)}%;width:${Math.abs(x1-x0)}%"></span>
+        <span class="med ${s.cls}" style="left:${xm}%"></span></span>
+      <span class="num">${s.med>=0?'':'−'}${Math.abs(s.med).toFixed(2)} <span class="tag ${s.cls}">${s.cls==='engineer'?'engineer':s.cls==='measure'?'measure':'·'}</span></span></div>`;
+  }).join('');
+  const eng=res.stats.filter(s=>s.cls==='engineer'), meas=res.stats.filter(s=>s.cls==='measure');
+  const msgs=[];
+  msgs.push(['ok', eng.length
+    ? `<b>Engineer next (robust across the parameter ranges):</b> ${eng.map(s=>ENZ[s.id].name).join(', ')}.`
+    : `<b>No step is robustly top-ranked</b> across the plausible ranges — the recommendation depends on parameters we don't yet know. Measure before committing.`]);
+  if(meas.length) msgs.push(['warn', `<b>Measure first (rank unstable):</b> ${meas.map(s=>ENZ[s.id].name).join(', ')}. A real kinetic measurement on these would most reduce which-step-to-engineer uncertainty.`]);
+  msgs.push(['ok', `<span style="color:var(--faint)">${res.n} draws · Latin-style Monte-Carlo over ${Object.keys(buildK()).length} sampled constants.</span>`]);
+  document.getElementById('ensVerdict').innerHTML = msgs.map(m=>`<div class="verdict ${m[0]}">${m[1]}</div>`).join('');
+}
+document.getElementById('runEnsemble').addEventListener('click',()=>{
+  const btn=document.getElementById('runEnsemble'), t=btn.textContent; btn.textContent='running…'; btn.disabled=true;
+  setTimeout(()=>{ try{ renderEnsemble(runEnsemble(240)); } finally { btn.textContent=t; btn.disabled=false; } }, 20);
+});
 
 // ════════════════════════════════════════════════════════════════════════
 //  CONSTRUCT BUILDER UI
@@ -633,22 +870,28 @@ function buildCassettes(){
     buildAll(); recompute();
   }));
 }
+const VARIANT_TITLE = { WT:'wild-type', FBR:'feedback-resistant (escapes active-site product inhibition)', Y27R:'low substrate inhibition' };
+function variantSel(e){
+  if(!e.variant) return '';
+  const s=STATE.enzymes[e.id], opts=e.variants||['Y27R','WT'];
+  const title = e.id==='mva_lower' ? ' title="WT MVK stays product-inhibited even when overexpressed; FBR (feedback-resistant mutant) escapes it — the cisgenic-vs-engineered lever."' : '';
+  return `<select data-variant="${e.id}" style="margin-left:6px"${title}>`+opts.map(o=>`<option value="${o}"${s.variant===o?' selected':''}>${o}</option>`).join('')+`</select>`;
+}
 function endoRow(e){
   const s=STATE.enzymes[e.id];
   const statePill = inAnyCas(e.id) ? '<span class="pill rec">native + recombinant</span>' : '<span class="pill">native only</span>';
   const keyPill = e.keyUnknown?'<span class="pill key">key unknown</span>':'';
+  const inhPill = e.productInhibition?'<span class="pill key" title="Competitive product inhibition at the active site — applies to native AND recombinant copies alike (unless a feedback-resistant variant escapes it).">active-site inhibition</span>':'';
   return `<tr>
-    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${statePill}${keyPill}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
+    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${statePill}${keyPill}${inhPill}${variantSel(e)}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
     <td><input type="number" data-nat="${e.id}" value="${s.nativeExpr}" min="0" step="0.1" title="Native expression — set from transcriptomics/proteomics, relative to a reference."></td>
     <td>${casChips(e.id)}</td>
   </tr>`;
 }
 function heteroRow(e){
-  const s=STATE.enzymes[e.id];
-  const variant = e.variant ? `<select data-variant="${e.id}" style="margin-left:6px"><option value="Y27R"${s.variant==='Y27R'?' selected':''}>Y27R</option><option value="WT"${s.variant==='WT'?' selected':''}>WT</option></select>` : '';
   const statePill = inAnyCas(e.id) ? '<span class="pill hetero">in construct</span>' : '<span class="pill">not added</span>';
   return `<tr>
-    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${statePill}${variant}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
+    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${statePill}${variantSel(e)}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
     <td>${casChips(e.id)}</td>
   </tr>`;
 }
@@ -658,20 +901,22 @@ function buildTables(){
   het.innerHTML=`<thead><tr><th>Enzyme</th><th>Add to cassette(s)</th></tr></thead><tbody>${ENZYMES.filter(e=>e.kind==='hetero').map(heteroRow).join('')}</tbody>`;
   endo.querySelectorAll('[data-nat]').forEach(inp=>inp.addEventListener('input',()=>{ STATE.enzymes[inp.dataset.nat].nativeExpr=Math.max(0,+inp.value||0); recompute(); }));
   document.querySelectorAll('[data-tog]').forEach(b=>b.addEventListener('click',()=>{ const [id,cas]=b.dataset.tog.split('|'); toggleCas(id,cas); buildAll(); recompute(); }));
-  het.querySelectorAll('[data-variant]').forEach(s=>s.addEventListener('change',()=>{ STATE.enzymes[s.dataset.variant].variant=s.value; recompute(); }));
+  document.querySelectorAll('[data-variant]').forEach(s=>s.addEventListener('change',()=>{ STATE.enzymes[s.dataset.variant].variant=s.value; recompute(); }));
 }
 function buildAll(){ buildCassettes(); buildTables(); }
 
 // ── plain sliders (feeds, drains, tuning) ───────────────────────────────────
-const PLAIN=['prenol_in','isoprenol_in','feedstock_viability','k_dolichol','k_CoQ','feedback_strength','lipid_priority'];
+const PLAIN=['prenol_in','isoprenol_in','feedstock_viability','k_dolichol','k_CoQ','feedback_strength','fas_draw','atp_headroom'];
 function syncPlain(){
   PLAIN.forEach(k=>{ const inp=document.getElementById('r_'+k); if(!inp) return; inp.value=STATE[k];
     document.getElementById('v_'+k).textContent=(+STATE[k]).toFixed(2); });
   document.getElementById('c_saggpps_dmapp').checked=STATE.saggpps_dmapp;
   document.getElementById('organism').value=STATE.organism;
+  document.getElementById('idi_host').value=STATE.idi_host;
 }
 PLAIN.forEach(k=>{ const inp=document.getElementById('r_'+k); inp.addEventListener('input',()=>{ STATE[k]=+inp.value;
   document.getElementById('v_'+k).textContent=(+inp.value).toFixed(2); recompute(); }); });
+document.getElementById('idi_host').addEventListener('change',e=>{ STATE.idi_host=e.target.value; recompute(); });
 document.getElementById('c_saggpps_dmapp').addEventListener('change',e=>{ STATE.saggpps_dmapp=e.target.checked; recompute(); });
 document.getElementById('organism').addEventListener('change',e=>{ STATE.organism=e.target.value; setNativeDefaults(e.target.value); lastX=null; buildAll(); syncPlain(); recompute(); });
 document.getElementById('addCas').addEventListener('click',()=>{ STATE.cassettes.push({id:'cas_'+Date.now(),name:'Cassette '+(STATE.cassettes.length+1),level:1}); buildCassettes(); });
@@ -687,10 +932,11 @@ const PRESETS={
   construct(){ baseState(); present(['saggpps','carrp','carb']); },
   bsf(){ baseState(); },
   recmva(){ baseState(); present(['saggpps','carrp','carb']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; },
+  fbrmva(){ baseState(); present(['saggpps','carrp','carb']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; STATE.enzymes.mva_lower.variant='FBR'; },
   iup(){ baseState(); present(['saggpps','carrp','carb']); addIUP(3); },
   combo(){ baseState(); present(['saggpps','carrp','carb']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; addIUP(3); },
   astax(){ baseState(); present(['saggpps','carrp','carb','crtwz']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; STATE.accessibility=0.8; },
-  yeast(){ baseState(); STATE.organism='yeast'; setNativeDefaults('yeast'); present(['saggpps','carrp','carb']);
+  yeast(){ baseState(); STATE.organism='yeast'; STATE.idi_host='microbial'; setNativeDefaults('yeast'); present(['saggpps','carrp','carb']);
     STATE.enzymes.carrp.variant='WT'; STATE.cassettes[0].level=4;
     // Ma's "strong GGPPS" condition: flood the supply + prenyl block so the WT
     // cyclase becomes the true bottleneck and lycopene accumulates.
@@ -712,9 +958,13 @@ function loadState(){
       ENZYMES.forEach(e=>{ let st=STATE.enzymes[e.id];
         if(!st){ st=STATE.enzymes[e.id]= e.kind==='endo'?{nativeExpr:1,cassettes:[]}:{cassettes:[]}; }
         if(!Array.isArray(st.cassettes)) st.cassettes = st.cassette?[st.cassette]:[];
-        if(e.variant && !st.variant) st.variant='Y27R';
+        if(e.variant && !st.variant) st.variant=(e.variants?e.variants[0]:'Y27R');
       });
       if(STATE.feedback_strength==null) STATE.feedback_strength=0.5;
+      // v3 backfill: shared-pool / IUP / IDI controls added after some links were made
+      if(STATE.fas_draw==null) STATE.fas_draw = (STATE.lipid_priority!=null?STATE.lipid_priority:1);
+      if(STATE.atp_headroom==null) STATE.atp_headroom=3;
+      if(STATE.idi_host==null) STATE.idi_host='insect';
       return true;
     } }catch(e){}
   return false;
@@ -733,12 +983,26 @@ document.getElementById('docsBody').innerHTML = `
   arrows is a classic bottleneck. Arrow colour tells you who runs the step (see legend): grey = the fly's own
   enzyme at native level, cyan = the fly's enzyme expressed recombinantly, coral = an enzyme you added.</p>
 
-  <h3>Native vs recombinant — and why it matters</h3>
-  <p>Endogenous MVA enzymes are held on a tight leash in their native context (feedback inhibition by
-  downstream isoprenoids). Expressing the <i>same</i> gene cisgenically off a semi-synthetic promoter sidesteps
-  that regulation, so a recombinant copy adds feedback-free capacity on top of the native activity. In this
-  model "+ recombinant" removes the feedback term and scales the enzyme by its cassette's promoter strength.
-  Adding a recombinant, feedback-free HMGR <i>is</i> what people mean by <b>tHMGR</b>.</p>
+  <h3>Native vs recombinant — and the two kinds of "feedback" (read this)</h3>
+  <p>Endogenous MVA enzymes are held on a tight leash. But "feedback" is <b>two mechanistically different
+  things</b>, and conflating them flips the cisgenic-vs-engineered recommendation — so the model splits them:</p>
+  <ul>
+    <li><b>Regulatory feedback</b> (<code>regFeedback</code>) — transcriptional / ERAD / promoter-level control.
+      Expressing the <i>same</i> gene cisgenically off a semi-synthetic promoter <b>escapes</b> it, so a
+      recombinant copy adds feedback-free capacity on top of native activity. This is <b>HMGR</b>: a recombinant
+      truncated copy <i>is</i> what people mean by <b>tHMGR</b>.</li>
+    <li><b>Active-site product inhibition</b> (<code>productInhibition</code>) — competitive inhibition at the
+      catalytic site, a property of the protein. It is <b>not</b> escaped by a strong promoter: native and
+      recombinant copies are inhibited alike. This is <b>MVK</b> (inside the lumped lower-MVA node): GPP, FPP and
+      GGPP compete at its ATP site (insect-direct AaMVK Ki's, 0.24–1.12&nbsp;µM). Overexpressing the <i>native</i>
+      MVK stays throttled; only a <b>feedback-resistant (FBR) MVK variant</b> escapes — set it with the MVK
+      variant selector. This is the actual cisgenic-vs-heterologous decision the team is choosing between.</li>
+  </ul>
+  <p>Try it: the <b>+ recombinant MVA</b> preset (WT MVK) shows MVK sitting as a product-inhibited bottleneck in
+  the leverage bars; switching MVK to <b>FBR</b> (or the <b>+ FBR MVK</b> preset) releases it and drops it out of
+  the bottleneck list. The product-flux gain is modest because the inhibition is a <i>governor</i> (the very
+  prenyl-PPs that inhibit MVK are downstream of it, so it self-limits) and the cyclase usually caps output — but
+  the ranking difference is the point.</p>
 
   <h3>Cassettes</h3>
   <p>Real constructs express several genes together. Put enzymes in the same cassette and they scale on one
@@ -755,6 +1019,31 @@ document.getElementById('docsBody').innerHTML = `
   tool exists partly to compare three routes to more C5 supply: <b>recombinant MVA</b> (escape the native cap),
   <b>IUP feed</b> (bypass MVA entirely), or <b>both</b> — see those presets. The IUP numbers are a heavy
   extrapolation; they are directional, not quantitative.</p>
+  <p>The IUP's real in-vivo limiter is its <b>2-ATP-per-C5 cost</b>, so the feed is gated against an <b>ATP
+  headroom</b> slider: with no headroom the route is throttled rather than giving free flux. Critically, the IUP
+  consumes <b>no acetyl-CoA carbon and no NADPH</b> (only ATP) — which is why it sidesteps the shared-pool
+  competition below, its whole metabolic advantage.</p>
+
+  <h3>Shared carbon &amp; reductant pools (the lipogenesis competition)</h3>
+  <p>The fat body's central trade-off is that the MVA pathway and fatty-acid synthesis (FAS) draw on the
+  <b>same</b> acetyl-CoA and NADPH. Both are modelled as <b>bounded shared pools</b> with conservation: the MVA
+  entry (thiolase) and the FAS sink compete for acetyl-CoA; HMGR (2 NADPH/mevalonate) and FAS compete for NADPH.
+  Push MVA hard and either pool can become the limiting step — watch the <b>acetyl-CoA avail / NADPH avail</b>
+  bars in the cost panel, and the diagnostics will name the pool when it bites. The <b>FAS draw</b> slider is a
+  tunable diversion with a genuine <b>sweet spot</b>: too little and the lipid droplets that sequester (and help
+  the lipophilic CrtW-Z partition to) the product are scarce; too much and it starves the isoprenoid route. This
+  is a deliberately coarse two-pool model — enough to change the ranking honestly, not a genome-scale cofactor
+  balance.</p>
+
+  <h3>Sensitivity ensemble — which abstraction is worth measuring?</h3>
+  <p>The fast leverage bars are computed at the <i>midpoint</i> of every kinetic constant — but we only know
+  those constants as ranges, so a single ranking is false confidence. Hit <b>"run sensitivity analysis"</b> and
+  the tool samples each constant from its <code>[lo,hi]</code> range (~240 Monte-Carlo draws), re-solves the
+  steady state and re-ranks each draw, and reports the <b>distribution</b> of every enzyme's control coefficient.
+  It then classifies each step: <b style="color:var(--ok)">engineer next</b> = robustly top-ranked whatever the
+  true parameters are (these are the recommendations); <b style="color:var(--gold)">measure first</b> = its rank
+  flips across the plausible range, so the model can't call it and a real measurement there would most reduce
+  uncertainty. That last class is the direct answer to "which abstraction should we spend effort removing."</p>
 
   <h3>Push vs pull (read this before trusting a single-enzyme result)</h3>
   <p>A well-known trap: <b>pushing one supply enzyme without downstream "pull" underperforms.</b> In yeast,
@@ -822,7 +1111,7 @@ document.getElementById('docsBody').innerHTML = `
   the map flags one that's abnormally high <i>relative to the rest of this network</i>.</p>
   <table class="params"><thead><tr><th>Pool</th><th>Role in BSF</th><th>vs yeast</th><th>Plausible real range</th></tr></thead><tbody>
     <tr><td>HMG-CoA / mevalonate</td><td>MVA intermediates</td><td>Less buffered; no sterol-driven turnover</td><td>low µM</td></tr>
-    <tr><td>IPP / DMAPP</td><td>C5 building blocks; DMAPP is the SaGGPPs primer</td><td>DMAPP/IPP ratio set by IDI (Keq≈0.25)</td><td>sub-µM–µM</td></tr>
+    <tr><td>IPP / DMAPP</td><td>C5 building blocks; DMAPP is the SaGGPPs primer</td><td>DMAPP/IPP ratio set by IDI (Keq toggle: insect 0.4–0.7 / microbial 2–5)</td><td>sub-µM–µM</td></tr>
     <tr><td>FPP</td><td>Branch point: prenylation, dolichol, CoQ, JH — and the feedback signal</td><td>No squalene drain; likely higher headroom than yeast</td><td>sub-µM</td></tr>
     <tr><td>GGPP</td><td>Carotenoid precursor (2 → phytoene)</td><td>Low natively (low GGPPS); the lever SaGGPPs targets</td><td>sub-µM</td></tr>
     <tr><td>phytoene / lycopene</td><td>Carotenoid intermediates</td><td>Heterologous; lycopene pile-up = cyclase-limited</td><td>µM if accumulating</td></tr>
@@ -834,86 +1123,100 @@ document.getElementById('docsBody').innerHTML = `
   and <b>no NADPH</b> (its main thermodynamic advantage); astaxanthin costs O₂ + reductant. The cost panel sums
   these for the running pathway so you can see the IUP's lower reductant burden vs MVA.</p>
 
+  <h3>Kinetic parameters &amp; confidence (§6)</h3>
+  <p>The constants the model leans on, with source and a confidence chip so an insect-direct value is never
+  mistaken for a yeast proxy. <span class="conf high">high</span> = insect-direct (mostly <i>Aedes</i> AaMVK);
+  <span class="conf med">med</span> = proxy from a microbial/related enzyme; <span class="conf mech">mech</span> =
+  mechanism well-evidenced but the numeric value is unmeasured; <span class="conf gap">gap</span> = no kinetics
+  exist, pure placeholder. Ranges are shown as published; only the <i>relative</i> structure (e.g. the MVK Ki
+  ordering) and the <i>spread</i> (sampled by the ensemble) are load-bearing — the absolute model pools stay
+  relative (see the dilution note in the gaps).</p>
+  <table class="params"><thead><tr><th>Parameter</th><th>Range</th><th>Source / proxy</th><th>Confidence</th></tr></thead><tbody>
+  ${Object.entries(PARAM).map(([k,p])=>`<tr><td>${k}</td><td>${p.disp}${p.unit&&p.unit!=='—'?' '+p.unit:''}</td><td>${p.src}</td><td><span class="conf ${p.conf}">${p.conf}</span></td></tr>`).join('')}
+  </tbody></table>
+  <p style="color:var(--faint);font-size:11.5px">Stoichiometry held in the balance: 2 GGPP → phytoene; DMAPP + 3 IPP → GGPP;
+  2 NADPH per mevalonate (HMGR); 3 ATP per IPP (lower MVA); 2 ATP per C5 (IUP), 0 NADPH (IUP).</p>
+
   <h3 style="color:var(--accent)">⚠ Known gaps — where the expert should dig</h3>
-  <p>I've taken this as far as I usefully can without real numbers. Here is an honest map of where the model is
-  most abstracted from reality and where the assumptions are shakiest, roughly ordered by how much they affect
-  the conclusions. This is the deep-research to-do list — the items near the top are the ones that would move it
-  from "a step above a toy" toward something predictive.</p>
+  <p>An honest map of where the model is still most abstracted, trimmed to the items that <b>still bite after the
+  v3 pass</b>. (v3 closed several earlier gaps — see "what v3 changed" at the end.)</p>
+
+  <p style="color:var(--gold)"><b>Read this one first — the steady-state pools are NOT concentrations.</b> A
+  first-order dilution term (0.05 on every species) is a numerical device so end-products reach a steady state;
+  it is not biology, and it makes the absolute pool magnitudes semi-arbitrary. <b>The flux-control coefficients
+  are computed on FLUX and remain trustworthy — the pool bars only tell you "is flux getting through," never a
+  concentration or titre.</b> Don't "fix" a pool that looks wrong; fix the flux ranking if <i>it</i> looks wrong.</p>
 
   <p style="color:var(--ink)"><b>A · Load-bearing assumptions (these most affect what the model concludes)</b></p>
   <ol>
-    <li><b>No anchor to real units.</b> Everything is relative, and a single generic Km (≈1) stands in for
-      nearly every prenyl step. The model ranks bottlenecks and shows the direction of a change, but it cannot
-      predict a titre — or even the true order of magnitude of a pool. <i>Highest-value first move:</i> pin a
-      handful of real Km/kcat values and one absolute anchor (a measured pool or titre), then let the rest
-      calibrate off them.</li>
-    <li><b>Sterol auxotrophy / no squalene sink.</b> The whole "BSF should out-convert yeast per unit push"
-      conclusion rests on insects lacking the squalene→sterol drain and its feedback. Confirm BSF truly lacks
-      squalene synthase (vs only the downstream sterol enzymes), and quantify the <i>other</i> native FPP/GGPP
-      demands — dolichol, ubiquinone, prenylation, and especially the <b>juvenile-hormone / farnesol branch,
-      which I don't model at all</b> and which could be a real, developmentally-regulated FPP sink in fat body.</li>
-    <li><b>End-product <i>pools</i> are semi-arbitrary.</b> A first-order growth-dilution term (0.05 on every
-      species) is a numerical device so end-products reach a steady state — it is not biology. <b>Trust the
-      flux to product, not the steady-state pool of product.</b> Real β-carotene/astaxanthin accumulate over
-      development; read the product-pool bars only as "is flux getting through," never as a titre.</li>
-    <li><b>Feedback / push–pull is a cartoon.</b> FPP is the sole feedback signal (Hill n=2, arbitrary
-      threshold), acting only on native enzymes. Whether BSF MVA has meaningful product feedback at all — and
-      via what (farnesol? JH? a sterol sensor it may not even have?) — is open, and it sets how much downstream
-      pull actually helps.</li>
+    <li><b>Absolute scale is still relative.</b> v3 pins real, source-tagged ranges for the constants that matter
+      (insect-direct MVK Ki's, IDI Keq, the cyclase mechanism) and samples their spread — but the <i>pools</i>
+      remain relative (see the dilution note above). The one absolute anchor we have, the Günther β-carotene
+      figure (~tens of ng/larva), is low-confidence and used only to scale the reported output flux, not as a
+      calibration. A measured pool or titre would let the rest calibrate off it.</li>
+    <li><b>Sterol auxotrophy / no squalene sink.</b> The "BSF should out-convert yeast per unit push" conclusion
+      rests on insects lacking the squalene→sterol drain and its feedback. Confirm BSF truly lacks squalene
+      synthase (vs only the downstream sterol enzymes), and quantify the <i>other</i> native FPP/GGPP demands —
+      dolichol, ubiquinone, prenylation, and especially the <b>juvenile-hormone / farnesol branch, which isn't
+      modelled</b> and could be a real, developmentally-regulated FPP sink in fat body.</li>
+    <li><b>Transcriptional feedback is still a cartoon.</b> v3 split feedback correctly into active-site product
+      inhibition (MVK — now insect-direct) and transcriptional <code>regFeedback</code> — but the latter is still
+      FPP as the sole signal (Hill n=2, arbitrary threshold), only on native copies. Whether BSF MVA has
+      meaningful <i>transcriptional</i> product feedback at all, and via what (farnesol? JH? a sterol sensor it
+      may not have?), is open and sets how much downstream pull relieves native supply.</li>
   </ol>
 
   <p style="color:var(--ink)"><b>B · Kinetic &amp; stoichiometric abstractions (affect which step looks limiting)</b></p>
   <ol>
-    <li><b>SaGGPPs DMAPP-direct route &amp; the 3×IPP question (you flagged this — it's a real one).</b> GGPP
-      (C20) = DMAPP + 3 IPP via three sequential condensations. The model books the stoichiometry correctly (it
-      subtracts 3·flux from the IPP balance) but the <i>rate law</i> is only first-order-saturating in IPP (a
-      lumped bisubstrate Michaelis–Menten), so it <b>understates how hard that flux leans on the IPP pool.</b>
-      In reality, sustaining the DMAPP-direct route needs IPP in genuine excess and IPP can become co-limiting
-      in a way the current law softens; the enzyme-bound GPP/FPP intermediates aren't represented either.
-      Raising IPP's effective kinetic order (or modelling the three condensations explicitly) is one of the
-      highest-value upgrades — and it couples tightly to the IDI question, since IDI sets the DMAPP:IPP split
-      this route depends on.</li>
-    <li><b>2 GGPP → phytoene is first-order in GGPP, not second.</b> Phytoene synthase condenses two GGPP; the
-      model consumes 2 but the rate saturates with GGPP to the first power, so phytoene synthesis is
-      <i>less</i> sensitive to GGPP depletion than reality (same under-modelled cooperativity as the point
-      above).</li>
-    <li><b>Lumped multi-step reactions hide internal bottlenecks.</b> Thiolase+HMGS, MVK·PMK·MVD, and
-      especially <b>CarB (four desaturations: phytoene → phytofluene → ζ-carotene → neurosporene → lycopene)</b>
-      are each one step. If the true bottleneck is a single desaturation or an intermediate piling up, this
-      model can't see it — it just reports "CarB slow."</li>
-    <li><b>IDI Keq and its rate law.</b> Keq = 0.25 (DMAPP/IPP) is a mid-confidence guess and the reversible
-      form is simplified. Since IDI is the flagged key unknown <i>and</i> the DMAPP-direct route hangs on it,
-      both the value and the form deserve real kinetics.</li>
-    <li><b>CarRP domain ratio is invented.</b> The PSY:cyclase turnover ratio (1.0 : 0.45) is tuned to make the
-      yeast validation behave, not measured — yet it sets where carotenoid flux sits relative to the cyclase
-      choke. Replace with literature/measured values.</li>
+    <li><b>Lumped multi-step reactions hide internal bottlenecks.</b> Thiolase+HMGS, MVK·PMK·MVD, and especially
+      <b>CarB (four desaturations: phytoene → phytofluene → ζ-carotene → neurosporene → lycopene)</b> are each one
+      step. If the true bottleneck is a single desaturation or an intermediate piling up, the model can't see it —
+      it just reports "CarB slow."</li>
+    <li><b>IDI activity &amp; rate-law form.</b> IDI is the flagged key unknown, and the DMAPP-direct route hangs
+      on the DMAPP:IPP split it sets. v3 exposes the Keq as an insect (0.4–0.7) vs microbial-host (2–5) toggle,
+      but the insect turnover and the reversible-rate form still want real kinetics.</li>
+    <li><b>CarRP / cyclase numbers are anchored to behaviour, not measured.</b> The PSY:cyclase turnover ratio and
+      the substrate-inhibition Km/Ki are scaled so the WT-vs-Y27R validation emerges; the mechanism is
+      well-evidenced (Ma 2022) but the numeric Ki is unmeasured. Replace with measured values when they land.</li>
   </ol>
 
   <p style="color:var(--ink)"><b>C · Structural simplifications</b></p>
   <ol>
-    <li><b>One well-mixed compartment.</b> Carotenogenesis is membrane/lipid-droplet-bound; phytoene and
-      lycopene are lipophilic and their "concentration" — and the cyclase's access to them — is spatial. The
-      cyclase Km/Ki are in relative units for exactly this reason, and CrtW-Z "accessibility" is a crude
-      stand-in for partitioning. A spatial/partitioning layer is the big structural upgrade if you want
-      quantitative astaxanthin.</li>
-    <li><b>Cofactors are reported, not enforced.</b> ATP/NADPH/O₂ are summed for insight but never constrain
-      flux — a scenario can demand impossible NADPH and the model won't push back. If reductant supply is a real
-      ceiling (it often is for HMGR-heavy pushes), it needs to become an actual constraint.</li>
-    <li><b>Lipogenesis competition is a one-line ratio.</b> No real acetyl-CoA pool, no NADPH sharing, no
-      developmental staging. Illustrative only.</li>
-    <li><b>IUP kinetics are the most extrapolated thing here.</b> CK/IPK lumped, "need both" enforced by a
-      min(), no monophosphate intermediate, alcohol Km and prenol-vs-isoprenol selectivity guessed, ATP drain
-      not enforced. Directional at best — this is where a literature pass would help most for the IUP-vs-MVA
-      decision.</li>
-    <li><b>Steady state vs a moving target.</b> Fat-body expression, feeding, and demand all change across
-      instars; steady state approximates a single snapshot of a developing animal.</li>
+    <li><b>One well-mixed compartment.</b> Carotenogenesis is lipid-droplet-bound; phytoene/lycopene are
+      lipophilic and the cyclase's and CrtW-Z's access to them is spatial. v3 ties a scalar partition (lifted by
+      the FAS draw) to CrtW-Z accessibility, but a real spatial/partitioning layer is the big structural upgrade
+      for quantitative astaxanthin.</li>
+    <li><b>ATP is reported, not enforced (except the IUP gate).</b> v3 makes acetyl-CoA and NADPH enforced shared
+      pools and gates the IUP on ATP headroom, but ATP elsewhere is still only summed. A scenario can still demand
+      more ATP than the cell could plausibly regenerate without the model pushing back.</li>
+    <li><b>The two shared pools are coarse.</b> acetyl-CoA and NADPH are scalar bounded pools with a capacity-
+      demand split and a single FAS-draw knob — enough to change the ranking honestly, but not a real metabolic
+      cofactor balance, and with no developmental staging.</li>
+    <li><b>IUP kinetics remain heavily extrapolated.</b> CK/IPK lumped, "need both" via a min(), no monophosphate
+      intermediate, alcohol Km and prenol-vs-isoprenol selectivity from yeast ScCK. v3 enforces the ATP cost and
+      keeps the prenol/isoprenol asymmetry, but this is still where a literature pass helps the IUP-vs-MVA call most.</li>
+    <li><b>Steady state vs a moving target.</b> Fat-body expression, feeding and demand all change across instars;
+      steady state is a single snapshot of a developing animal.</li>
   </ol>
 
+  <p style="color:var(--ink)"><b>What v3 changed (closed or downgraded gaps)</b></p>
+  <ul>
+    <li><b>MVK product inhibition split out</b> from transcriptional feedback, with insect-direct AaMVK Ki's and a
+      feedback-resistant variant — the cisgenic-vs-engineered lever.</li>
+    <li><b>Phytoene synthase now cooperative (Hill n=2) in GGPP</b>, and the <b>SaGGPPs DMAPP-direct route raised
+      to ~2nd order in IPP</b> — both flagged B-gaps, so GGPP/IPP supply is now appropriately load-bearing.</li>
+    <li><b>Acetyl-CoA &amp; NADPH are real shared bounded pools</b> competing with FAS (was a one-line ratio), and
+      the <b>IUP is ATP-gated</b>.</li>
+    <li><b>Single-point leverage is backed by a parameter ensemble</b> that separates robust recommendations from
+      "measure-first" steps whose rank is unstable to the unknowns.</li>
+  </ul>
+
   <p style="color:var(--faint);font-size:11.5px">Steady state solved directly (dC/dt=0) by damped Newton with a
-  finite-difference Jacobian (11 species); leverage bars are ±1% finite-difference flux-control coefficients.
-  All editable kinetics live in the <code>V</code>, <code>KM</code>, <code>LCY</code>, <code>NATIVE_DEF</code>
-  and <code>ENZYMES</code> objects at the top of the page source — change a number there and the whole map,
-  ranking and diagnostics update.</p>
+  finite-difference Jacobian (11 species), cold-started for determinism (the cyclase substrate-inhibition term is
+  bistable); leverage bars are ±1% finite-difference flux-control coefficients, and the ensemble samples the
+  <code>[lo,hi]</code> ranges. All editable kinetics live in the <code>V</code> (turnovers), <code>ENS</code>
+  (sampled ranges), <code>PARAM</code> (source/confidence table), <code>NATIVE_DEF</code> and <code>ENZYMES</code>
+  objects at the top of the page source — change a number there and the whole map, ranking and diagnostics update.</p>
 `;
 
 // ── init ─────────────────────────────────────────────────────────────────────
