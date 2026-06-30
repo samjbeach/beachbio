@@ -54,6 +54,12 @@
   .etable .modebtns button.on { background:var(--accent); color:#1a0d09; font-weight:600; }
   .etable .modebtns button.on.endo { background:var(--cyan); color:#04181b; }
   .muted-cell { color:var(--faint); font-family:var(--mono); font-size:10.5px; }
+  .pill.rec { color:var(--cyan); border-color:rgba(95,184,196,.4); }
+  /* per-row cassette membership toggles */
+  .rowchips { display:flex; flex-wrap:wrap; gap:4px; }
+  .cas-chip { font-family:var(--mono); font-size:10px; padding:3px 8px; border-radius:5px; background:var(--inputbg); border:1px solid var(--inputbd); color:var(--faint); cursor:pointer; line-height:1; }
+  .cas-chip:hover { border-color:var(--accent); color:var(--muted); }
+  .cas-chip.on { background:var(--accent); border-color:var(--accent); color:#1a0d09; font-weight:600; }
 
   /* cassette cards */
   .cas-grid { display:flex; flex-wrap:wrap; gap:10px; }
@@ -110,7 +116,8 @@
       <button class="preset" data-preset="construct">Current construct</button>
       <button class="preset" data-preset="bsf">BSF wild-type</button>
       <button class="preset" data-preset="recmva">+ recombinant MVA</button>
-      <button class="preset" data-preset="prenol">+ prenol feed</button>
+      <button class="preset" data-preset="iup">+ IUP feed</button>
+      <button class="preset" data-preset="combo">+ IUP &amp; rec-MVA</button>
       <button class="preset" data-preset="astax">+ astaxanthin</button>
       <button class="preset" data-preset="yeast">Yeast validation</button>
       <span style="flex:1"></span>
@@ -177,8 +184,9 @@
   <!-- ── construct builder ───────────────────────────────────────────── -->
   <h2><span class="step">2</span>Construct</h2>
   <p class="hint">Endogenous enzymes are already in the fly — their <b>native</b> activity is feedback-limited.
-    Add a <b>recombinant</b> (cisgenic, semi-synthetic-promoter) copy to escape feedback and dial expression
-    via a cassette. Heterologous enzymes only exist if you add them.</p>
+    Put an enzyme in a <b>cassette</b> to express it recombinantly (cisgenic, semi-synthetic promoter — escapes
+    feedback). Heterologous enzymes only exist once they're in a cassette. An enzyme can sit in several
+    cassettes at once (its expression is the sum of those promoters).</p>
 
   <div class="panel">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -196,15 +204,17 @@
 
   <div class="grid" style="margin-top:16px">
     <div class="panel">
-      <h2>Feedstock (isopentenol bypass)</h2>
+      <h2>Feedstock (isopentenol / IUP bypass)</h2>
       <div class="field-row"><label>Prenol fed <span class="unit">→ DMAPP, relative</span></label>
         <input type="range" id="r_prenol_in" min="0" max="20" step="0.5"><span class="muted-cell" id="v_prenol_in"></span></div>
       <div class="field-row"><label>Isoprenol fed <span class="unit">→ IPP, relative</span></label>
         <input type="range" id="r_isoprenol_in" min="0" max="20" step="0.5"><span class="muted-cell" id="v_isoprenol_in"></span></div>
       <div class="field-row"><label>Uptake / viability <span class="unit">0–1</span></label>
         <input type="range" id="r_feedstock_viability" min="0" max="1" step="0.05"><span class="muted-cell" id="v_feedstock_viability"></span></div>
-      <p class="hint">Feeding prenol primes DMAPP directly — it sidesteps weak IDI. Isopentenols can be toxic;
-        drop viability to reflect your own data.</p>
+      <p class="hint"><b>BSF has no native route from isopentenols to the pathway</b> — feeding does nothing
+        until you add the <b>IUP module</b> (choline kinase + IPK) to a cassette in the heterologous table.
+        Prenol then primes DMAPP directly, sidestepping weak IDI. Isopentenols can be toxic; drop viability per
+        your own data.</p>
     </div>
     <div class="panel">
       <h2>Endogenous drains &amp; tuning</h2>
@@ -249,6 +259,10 @@ const ENZYMES = [
     note:'Builds the C10/C15 prenyl diphosphates.'},
   {id:'ggpps_native', name:'Native GGPPS', rxn:'FPP + IPP → GGPP', kind:'endo',
     note:'BSF\'s own GGPP synthase (Drosophila quemao-type). Low baseline.'},
+  {id:'ck',           name:'Choline kinase (IUP)', rxn:'prenol/isoprenol → mono-P', kind:'hetero', cost:'1 ATP',
+    note:'IUP step 1. BSF has NO native route from fed isopentenols into the pathway — you must add this. Rate-limiting (high Km for the alcohol). Needs IPK downstream or the mono-phosphate dead-ends.'},
+  {id:'ipk',          name:'IPK (IUP)', rxn:'mono-P → IPP/DMAPP', kind:'hetero', cost:'1 ATP',
+    note:'IUP step 2 (isopentenyl phosphate kinase). Fast. With CK, lets fed prenol→DMAPP and isoprenol→IPP, bypassing the whole MVA pathway.'},
   {id:'saggpps',      name:'SaGGPPs', rxn:'FPP/DMAPP → GGPP', kind:'hetero',
     note:'Engineered GGPP synthase — the "flow restrictor". Can also run a DMAPP-direct route. Too strong + WT cyclase → lycopene pile-up.'},
   {id:'carrp',        name:'CarRP', rxn:'2 GGPP → phytoene; lycopene → β-carotene', kind:'hetero', variant:true,
@@ -284,9 +298,7 @@ const STATE = {};
 function blankEnzymeState(){
   const o={};
   ENZYMES.forEach(e=>{
-    o[e.id] = e.kind==='endo'
-      ? { nativeExpr:1, recombinant:false, cassette:'cas_supply' }
-      : { present:false, cassette:'cas_caro' };
+    o[e.id] = e.kind==='endo' ? { nativeExpr:1, cassettes:[] } : { cassettes:[] };
     if(e.variant) o[e.id].variant='Y27R';
   });
   return o;
@@ -294,7 +306,16 @@ function blankEnzymeState(){
 function setNativeDefaults(host){
   const d=NATIVE_DEF[host];
   ENZYMES.filter(e=>e.kind==='endo').forEach(e=>{ STATE.enzymes[e.id].nativeExpr = (d[e.id]!=null?d[e.id]:1); });
+  // Insects are sterol auxotrophs — little/no sterol feedback on MVA — so native
+  // feedback is much weaker than in yeast (ergosterol-repressed). This is part of
+  // why an HMGR push is expected to work relatively better in BSF than in yeast.
+  STATE.feedback_strength = host==='yeast' ? 2.5 : 0.5;
 }
+// cassette membership (an enzyme can be in several cassettes; expression sums them)
+function casLevels(id){ return STATE.enzymes[id].cassettes.reduce((s,c)=>s+cassetteLevel(c),0); }
+function inAnyCas(id){ return STATE.enzymes[id].cassettes.length>0; }
+function toggleCas(id,cas){ const a=STATE.enzymes[id].cassettes, i=a.indexOf(cas); if(i<0) a.push(cas); else a.splice(i,1); }
+function iupActive(){ return inAnyCas('ck') && inAnyCas('ipk'); }
 function baseState(){
   STATE.organism='insect';
   STATE.enzymes = blankEnzymeState();
@@ -320,9 +341,10 @@ function effExpr(id, x, P){
   if(def.kind==='endo'){
     let fb=1;
     if(def.feedback && P.feedback_strength>0){ const FPP=x[5]; fb=1/(1+P.feedback_strength*Math.pow(FPP/FB_REF,2)); }
-    E = e.nativeExpr*fb + (e.recombinant ? cassetteLevel(e.cassette) : 0);
+    // native (feedback-limited) + any recombinant copies (feedback-free, summed over cassettes)
+    E = e.nativeExpr*fb + casLevels(id);
   } else {
-    E = e.present ? cassetteLevel(e.cassette) : 0;
+    E = casLevels(id);   // heterologous: exists only if in ≥1 cassette
   }
   return E * (P.boost[id]||1);
 }
@@ -334,8 +356,11 @@ function rates(x, P){
   r.thiolase = E('thiolase')*V.thiolase*P.acetylAvail;          // acetyl-CoA → HMG-CoA
   r.hmgr = mm(HMG, E('hmgr')*V.hmgr, Kg);                       // → mevalonate, 2 NADPH
   r.mva  = mm(MEV, E('mva_lower')*V.mva, Kg);                   // → IPP, 3 ATP
-  r.prenolCK = P.feedstock_viability*mm(P.prenol_in, V.ck, KM.ck_prenol);   // → DMAPP, 2 ATP
-  r.isoCK    = P.feedstock_viability*mm(P.isoprenol_in, V.ck, KM.ck_iso);   // → IPP, 2 ATP
+  // IUP bypass: only works if BOTH choline kinase and IPK are expressed (BSF has
+  // no native isopentenol→prenyl-P route). CK is rate-limiting (high Km); need both.
+  const iup = Math.min(E('ck'), E('ipk'));
+  r.prenolCK = iup*V.ck*P.feedstock_viability*P.prenol_in/(KM.ck_prenol+P.prenol_in);   // → DMAPP, 2 ATP
+  r.isoCK    = iup*V.ck*P.feedstock_viability*P.isoprenol_in/(KM.ck_iso+P.isoprenol_in); // → IPP, 2 ATP
   r.idi = E('idi')*V.idi*(IPP - DMAPP/P.Keq)/(Kg+IPP+DMAPP);   // net IPP→DMAPP (signed)
   r.fpps1 = bi(DMAPP,IPP, E('fpps')*V.fpps, Kg,Kg);            // → GPP
   r.fpps2 = bi(GPP,IPP,   E('fpps')*V.fpps, Kg,Kg);            // → FPP
@@ -396,14 +421,14 @@ function solveSS(P, x0){
   return {x, r:rates(x,P)};
 }
 
-const astaxOn = ()=>STATE.enzymes.crtwz.present;
+const astaxOn = ()=>inAnyCas('crtwz');
 const targetFlux=(r)=> astaxOn() ? r.astax : r.lcy;
 
 // leverage = flux control coefficients, per active enzyme
 function leverage(P, ss){
   const J0=targetFlux(ss.r);
   const active=ENZYMES.filter(e=>{ const s=STATE.enzymes[e.id];
-    return e.kind==='endo' ? (s.nativeExpr>0||s.recombinant) : s.present; });
+    return e.kind==='endo' ? (s.nativeExpr>0||inAnyCas(e.id)) : inAnyCas(e.id); });
   const out=[]; let sum=0;
   for(const e of active){
     if(J0<=1e-12){ out.push([e.id,0]); continue; }
@@ -422,7 +447,7 @@ function resolveP(){
     accessibility:STATE.accessibility, squalene_on:STATE.organism==='yeast' };
   // coarse acetyl-CoA competition between MVA supply and storage lipid
   const sp=['thiolase','hmgr','mva_lower'].reduce((s,id)=>{ const e=STATE.enzymes[id];
-    return s + e.nativeExpr + (e.recombinant?cassetteLevel(e.cassette):0); },0);
+    return s + e.nativeExpr + casLevels(id); },0);
   P.acetylAvail = sp/(sp+STATE.lipid_priority);
   P.lipidShare  = STATE.lipid_priority/(sp+STATE.lipid_priority);
   return P;
@@ -444,7 +469,7 @@ const NODES = {
 };
 const EDGES = [
   ['acetyl','HMG','thiolase',r=>r.thiolase], ['HMG','MEV','hmgr',r=>r.hmgr], ['MEV','IPP','mva_lower',r=>r.mva],
-  ['isoprenol','IPP','feed',r=>r.isoCK], ['prenol','DMAPP','feed',r=>r.prenolCK],
+  ['isoprenol','IPP','iup',r=>r.isoCK], ['prenol','DMAPP','iup',r=>r.prenolCK],
   ['IPP','DMAPP','idi',r=>Math.abs(r.idi)],
   ['DMAPP','GPP','fpps',r=>r.fpps1], ['GPP','FPP','fpps',r=>r.fpps2],
   ['FPP','GGPP','ggpps_native',r=>r.ggn], ['FPP','GGPP','saggpps',r=>r.saF,{off:5}], ['DMAPP','GGPP','saggpps',r=>r.saD,{dash:1,off:-7}],
@@ -457,10 +482,11 @@ const SVGNS='http://www.w3.org/2000/svg';
 function svgEl(t,a,txt){ const e=document.createElementNS(SVGNS,t); for(const k in a) e.setAttribute(k,a[k]); if(txt!=null) e.textContent=txt; return e; }
 
 function edgeClass(enzId){
-  if(enzId==='feed') return 'feed'; if(enzId==='sink') return 'sink';
-  const s=STATE.enzymes[enzId], def=ENZ[enzId];
-  if(def.kind==='hetero') return s.present?'hetero':'off';
-  return s.recombinant?'recomb':'endo';
+  if(enzId==='sink') return 'sink';
+  if(enzId==='iup')  return iupActive()?'hetero':'off';
+  const def=ENZ[enzId];
+  if(def.kind==='hetero') return inAnyCas(enzId)?'hetero':'off';
+  return inAnyCas(enzId)?'recomb':'endo';
 }
 function drawMap(x, r, P){
   const eg=document.getElementById('edges'), lg=document.getElementById('elabels'), ng=document.getElementById('nodes');
@@ -472,11 +498,13 @@ function drawMap(x, r, P){
     let cls='edge '+edgeClass(e[2])+(opt.dash?' dash':'');
     if(P.squalene_on===false && e[1]==='squalene') cls='edge off';
     const ln=svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:cls,'stroke-width':w.toFixed(2),'marker-end':'url(#arr)'});
-    ln.appendChild(svgEl('title',{}, `${ENZ[e[2]]?ENZ[e[2]].name:e[2]}: flux ${f.toFixed(3)}`));
+    const nm = e[2]==='iup' ? 'IUP (CK+IPK)' : (ENZ[e[2]]?ENZ[e[2]].name:e[2]);
+    ln.appendChild(svgEl('title',{}, `${nm}: flux ${f.toFixed(3)}`));
     eg.appendChild(ln);
-    if(e[2]!=='feed' && e[2]!=='sink' && ENZ[e[2]]){
+    const short = e[2]==='iup' ? 'IUP' : (ENZ[e[2]]?ENZ[e[2]].name.split(' ')[0]:null);
+    if(e[2]!=='sink' && short){
       const mx=(a.x+b.x)/2+(opt.off||0), my=(a.y+b.y)/2;
-      lg.appendChild(svgEl('text',{x:mx+5,y:my+3,class:'edge-lab'}, ENZ[e[2]].name.split(' ')[0]));
+      lg.appendChild(svgEl('text',{x:mx+5,y:my+3,class:'edge-lab'}, short));
     }
   });
   for(const id in NODES){
@@ -509,6 +537,8 @@ function diagnose(x, r, P, lev){
   const msgs=[], mean=x.reduce((s,a)=>s+a,0)/x.length||1, hi=v=>v>1.8*mean, lo=v=>v<0.4*mean;
   const top=lev.out[0], prod=astaxOn()?'astaxanthin':'β-carotene';
   const Ki=STATE.enzymes.carrp.variant==='WT'?LCY.Ki_WT:LCY.Ki_Y27R;
+  if((P.prenol_in>0||P.isoprenol_in>0) && !iupActive())
+    msgs.push(['warn','<b>You\'re feeding isopentenols but the IUP module isn\'t built.</b> BSF can\'t convert prenol/isoprenol on its own — add choline kinase + IPK to a cassette, or none of the feed is used.']);
   if(LYC>1.5 && LYC>1.3*BCAR && Ki<1e5)
     msgs.push(['warn','<b>Lycopene is piling up.</b> The WT cyclase chokes on its own substrate. Switch CarRP to Y27R, or ease off SaGGPPs so lycopene stays low.']);
   if(hi(GGPP)&&lo(PHY)) msgs.push(['warn','<b>GGPP backs up, little phytoene.</b> Phytoene synthase (CarRP) is limiting — boost it.']);
@@ -554,70 +584,65 @@ function recompute(){
 // ════════════════════════════════════════════════════════════════════════
 //  CONSTRUCT BUILDER UI
 // ════════════════════════════════════════════════════════════════════════
-function recombCassetteOptions(selected){
-  return STATE.cassettes.map(c=>`<option value="${c.id}"${c.id===selected?' selected':''}>${c.name}</option>`).join('');
+function shortCas(c){ return 'C'+(STATE.cassettes.indexOf(c)+1); }
+function casChips(id){
+  return `<div class="rowchips">`+STATE.cassettes.map(c=>{
+    const on=STATE.enzymes[id].cassettes.includes(c.id);
+    return `<button class="cas-chip ${on?'on':''}" data-tog="${id}|${c.id}" title="${c.name} (${c.level}×)">${shortCas(c)}</button>`;
+  }).join('')+`</div>`;
 }
 function buildCassettes(){
   const grid=document.getElementById('casGrid');
   grid.innerHTML = STATE.cassettes.map(c=>{
     const members=[];
-    ENZYMES.forEach(e=>{ const s=STATE.enzymes[e.id];
-      const inCas = e.kind==='endo' ? (s.recombinant&&s.cassette===c.id) : (s.present&&s.cassette===c.id);
-      if(inCas) members.push(`<span class="chip ${e.kind}">${e.name}</span>`);
-    });
+    ENZYMES.forEach(e=>{ if(STATE.enzymes[e.id].cassettes.includes(c.id)) members.push(`<span class="chip ${e.kind}">${e.name}</span>`); });
     const delBtn = STATE.cassettes.length>1 ? `<button class="preset cas-del" data-del="${c.id}">✕</button>` : '';
     return `<div class="cas-card">
-      <div class="cas-head"><input class="cas-name" data-cas="${c.id}" value="${c.name}">${delBtn}</div>
+      <div class="cas-head"><span class="muted-cell" style="font-weight:600">${shortCas(c)}</span><input class="cas-name" data-cas="${c.id}" value="${c.name}">${delBtn}</div>
       <input type="range" data-caslvl="${c.id}" min="0" max="20" step="0.5" value="${c.level}">
       <div class="inline" style="justify-content:space-between"><span class="muted-cell">promoter strength</span><span class="cas-val">${c.level.toFixed(1)}×</span></div>
-      <div class="cas-members">${members.join('')||'<span class="muted-cell">empty</span>'}</div>
+      <div class="cas-members">${members.join('')||'<span class="muted-cell">empty — toggle a chip in the tables below</span>'}</div>
     </div>`;
   }).join('');
   grid.querySelectorAll('[data-caslvl]').forEach(inp=>inp.addEventListener('input',()=>{
     const c=STATE.cassettes.find(c=>c.id===inp.dataset.caslvl); c.level=+inp.value;
-    inp.parentElement.querySelector('.cas-val').textContent=(+inp.value).toFixed(1)+'×'; recompute();
+    inp.parentElement.querySelector('.cas-val').textContent=(+inp.value).toFixed(1)+'×';
+    buildTables(); recompute();   // chip titles show the level
   }));
   grid.querySelectorAll('[data-cas]').forEach(inp=>inp.addEventListener('change',()=>{
     STATE.cassettes.find(c=>c.id===inp.dataset.cas).name=inp.value; buildAll(); recompute();
   }));
   grid.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
     const id=b.dataset.del; STATE.cassettes=STATE.cassettes.filter(c=>c.id!==id);
-    const fb=STATE.cassettes[0].id;
-    ENZYMES.forEach(e=>{ if(STATE.enzymes[e.id].cassette===id) STATE.enzymes[e.id].cassette=fb; });
+    ENZYMES.forEach(e=>{ STATE.enzymes[e.id].cassettes=STATE.enzymes[e.id].cassettes.filter(x=>x!==id); });
     buildAll(); recompute();
   }));
 }
 function endoRow(e){
   const s=STATE.enzymes[e.id];
-  const pills=`<span class="pill endo">endogenous</span>${e.keyUnknown?'<span class="pill key">key unknown</span>':''}`;
-  const recomb = s.recombinant
-    ? `<select data-cassel="${e.id}">${recombCassetteOptions(s.cassette)}</select>`
-    : `<span class="muted-cell">native only</span>`;
+  const statePill = inAnyCas(e.id) ? '<span class="pill rec">native + recombinant</span>' : '<span class="pill">native only</span>';
+  const keyPill = e.keyUnknown?'<span class="pill key">key unknown</span>':'';
   return `<tr>
-    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${pills}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
-    <td><label class="muted-cell" style="display:block;margin-bottom:2px">native expr</label><input type="number" data-nat="${e.id}" value="${s.nativeExpr}" min="0" step="0.1" title="Set from transcriptomics/proteomics — relative to a reference."></td>
-    <td><div class="modebtns"><button data-rec="${e.id}" data-v="0" class="${!s.recombinant?'on endo':''}">native</button><button data-rec="${e.id}" data-v="1" class="${s.recombinant?'on':''}">+ recombinant</button></div></td>
-    <td>${recomb}</td>
+    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${statePill}${keyPill}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
+    <td><input type="number" data-nat="${e.id}" value="${s.nativeExpr}" min="0" step="0.1" title="Native expression — set from transcriptomics/proteomics, relative to a reference."></td>
+    <td>${casChips(e.id)}</td>
   </tr>`;
 }
 function heteroRow(e){
   const s=STATE.enzymes[e.id];
   const variant = e.variant ? `<select data-variant="${e.id}" style="margin-left:6px"><option value="Y27R"${s.variant==='Y27R'?' selected':''}>Y27R</option><option value="WT"${s.variant==='WT'?' selected':''}>WT</option></select>` : '';
-  const cas = s.present ? `<select data-cassel="${e.id}">${recombCassetteOptions(s.cassette)}</select>` : `<span class="muted-cell">—</span>`;
+  const statePill = inAnyCas(e.id) ? '<span class="pill hetero">in construct</span>' : '<span class="pill">not added</span>';
   return `<tr>
-    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span><span class="pill hetero">heterologous</span>${variant}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
-    <td><label class="toggle"><input type="checkbox" data-present="${e.id}" ${s.present?'checked':''}> include</label></td>
-    <td>${cas}</td>
+    <td><span class="enz-name" title="${e.note.replace(/"/g,'&quot;')}">${e.name}</span>${statePill}${variant}<div class="enz-rxn">${e.rxn}${e.cost?' · '+e.cost:''}</div></td>
+    <td>${casChips(e.id)}</td>
   </tr>`;
 }
 function buildTables(){
   const endo=document.getElementById('endoTable'), het=document.getElementById('heteroTable');
-  endo.innerHTML=`<thead><tr><th>Enzyme</th><th>Native level</th><th>Expression</th><th>Cassette</th></tr></thead><tbody>${ENZYMES.filter(e=>e.kind==='endo').map(endoRow).join('')}</tbody>`;
-  het.innerHTML=`<thead><tr><th>Enzyme</th><th>In construct</th><th>Cassette</th></tr></thead><tbody>${ENZYMES.filter(e=>e.kind==='hetero').map(heteroRow).join('')}</tbody>`;
+  endo.innerHTML=`<thead><tr><th>Enzyme</th><th>Native level</th><th>Recombinant — add to cassette(s)</th></tr></thead><tbody>${ENZYMES.filter(e=>e.kind==='endo').map(endoRow).join('')}</tbody>`;
+  het.innerHTML=`<thead><tr><th>Enzyme</th><th>Add to cassette(s)</th></tr></thead><tbody>${ENZYMES.filter(e=>e.kind==='hetero').map(heteroRow).join('')}</tbody>`;
   endo.querySelectorAll('[data-nat]').forEach(inp=>inp.addEventListener('input',()=>{ STATE.enzymes[inp.dataset.nat].nativeExpr=Math.max(0,+inp.value||0); recompute(); }));
-  endo.querySelectorAll('[data-rec]').forEach(b=>b.addEventListener('click',()=>{ STATE.enzymes[b.dataset.rec].recombinant=b.dataset.v==='1'; buildAll(); recompute(); }));
-  document.querySelectorAll('[data-cassel]').forEach(s=>s.addEventListener('change',()=>{ STATE.enzymes[s.dataset.cassel].cassette=s.value; buildCassettes(); recompute(); }));
-  het.querySelectorAll('[data-present]').forEach(c=>c.addEventListener('change',()=>{ STATE.enzymes[c.dataset.present].present=c.checked; buildAll(); recompute(); }));
+  document.querySelectorAll('[data-tog]').forEach(b=>b.addEventListener('click',()=>{ const [id,cas]=b.dataset.tog.split('|'); toggleCas(id,cas); buildAll(); recompute(); }));
   het.querySelectorAll('[data-variant]').forEach(s=>s.addEventListener('change',()=>{ STATE.enzymes[s.dataset.variant].variant=s.value; recompute(); }));
 }
 function buildAll(){ buildCassettes(); buildTables(); }
@@ -639,13 +664,16 @@ document.getElementById('addCas').addEventListener('click',()=>{ STATE.cassettes
 // ════════════════════════════════════════════════════════════════════════
 //  PRESETS
 // ════════════════════════════════════════════════════════════════════════
-function present(ids){ ids.forEach(id=>{ STATE.enzymes[id].present=true; STATE.enzymes[id].cassette='cas_caro'; }); }
-function recomb(ids){ ids.forEach(id=>{ STATE.enzymes[id].recombinant=true; STATE.enzymes[id].cassette='cas_supply'; }); }
+function addToCas(ids,cas){ ids.forEach(id=>{ if(!STATE.enzymes[id].cassettes.includes(cas)) STATE.enzymes[id].cassettes.push(cas); }); }
+function present(ids){ addToCas(ids,'cas_caro'); }
+function recomb(ids){ addToCas(ids,'cas_supply'); }
+function addIUP(level){ STATE.cassettes.push({id:'cas_iup',name:'IUP module',level:level}); addToCas(['ck','ipk'],'cas_iup'); STATE.prenol_in=8; }
 const PRESETS={
   construct(){ baseState(); present(['saggpps','carrp','carb']); },
   bsf(){ baseState(); },
   recmva(){ baseState(); present(['saggpps','carrp','carb']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; },
-  prenol(){ baseState(); present(['saggpps','carrp','carb']); STATE.prenol_in=6; },
+  iup(){ baseState(); present(['saggpps','carrp','carb']); addIUP(3); },
+  combo(){ baseState(); present(['saggpps','carrp','carb']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; addIUP(3); },
   astax(){ baseState(); present(['saggpps','carrp','carb','crtwz']); recomb(['thiolase','hmgr','mva_lower']); STATE.cassettes[1].level=6; STATE.accessibility=0.8; },
   yeast(){ baseState(); STATE.organism='yeast'; setNativeDefaults('yeast'); present(['saggpps','carrp','carb']);
     STATE.enzymes.carrp.variant='WT'; STATE.cassettes[0].level=4;
@@ -657,12 +685,23 @@ function applyPreset(name){ (PRESETS[name]||PRESETS.construct)(); lastX=null; bu
 document.querySelectorAll('button[data-preset]').forEach(b=>b.addEventListener('click',()=>applyPreset(b.dataset.preset)));
 
 // ── URL / localStorage ──────────────────────────────────────────────────────
-function syncURL(){ try{ const s=btoa(encodeURIComponent(JSON.stringify(STATE))); history.replaceState(null,'','#'+s); localStorage.setItem('bsf-flux-v2',s); }catch(e){} }
+function syncURL(){ try{ const s=btoa(encodeURIComponent(JSON.stringify(STATE))); history.replaceState(null,'','#'+s); localStorage.setItem('bsf-flux-v3',s); }catch(e){} }
 function loadState(){
-  let s = location.hash.length>1 ? location.hash.slice(1) : localStorage.getItem('bsf-flux-v2');
+  let s = location.hash.length>1 ? location.hash.slice(1) : localStorage.getItem('bsf-flux-v3');
   if(!s) return false;
   try{ const o=JSON.parse(decodeURIComponent(atob(s)));
-    if(o&&o.enzymes&&o.cassettes){ Object.assign(STATE,o); return true; } }catch(e){}
+    if(o&&o.enzymes&&o.cassettes){
+      Object.assign(STATE,o);
+      // migrate / backfill: ensure every enzyme has a cassettes[] array, including
+      // enzymes added since the link was made (e.g. the IUP module).
+      ENZYMES.forEach(e=>{ let st=STATE.enzymes[e.id];
+        if(!st){ st=STATE.enzymes[e.id]= e.kind==='endo'?{nativeExpr:1,cassettes:[]}:{cassettes:[]}; }
+        if(!Array.isArray(st.cassettes)) st.cassettes = st.cassette?[st.cassette]:[];
+        if(e.variant && !st.variant) st.variant='Y27R';
+      });
+      if(STATE.feedback_strength==null) STATE.feedback_strength=0.5;
+      return true;
+    } }catch(e){}
   return false;
 }
 document.getElementById('copylink').addEventListener('click',()=>{ navigator.clipboard.writeText(location.href).then(()=>{
@@ -688,8 +727,41 @@ document.getElementById('docsBody').innerHTML = `
 
   <h3>Cassettes</h3>
   <p>Real constructs express several genes together. Put enzymes in the same cassette and they scale on one
-  promoter-strength slider; split them across cassettes to tune ratios. This is the main "what should we build"
-  control: which enzymes go in, and how hard you drive each cassette.</p>
+  promoter-strength slider; split them across cassettes to tune ratios. An enzyme can sit in <b>several
+  cassettes at once</b> — its total expression is the sum of those promoters (a stand-in for multiple
+  integrated copies). This is the main "what should we build" control: which enzymes go in, and how hard you
+  drive each cassette.</p>
+
+  <h3>The IUP feed (and why feeding alone does nothing)</h3>
+  <p>The isopentenol utilisation pathway (IUP) is a two-enzyme bypass: a kinase (choline/alcohol kinase, CK)
+  phosphorylates fed prenol/isoprenol, then isopentenyl phosphate kinase (IPK) makes DMAPP/IPP — skipping the
+  entire MVA pathway. <b>BSF has no endogenous IUP</b>, so the feed sliders do nothing until you add CK + IPK to
+  a cassette. We model CK as rate-limiting (high Km for the alcohol) and IPK as fast, and require both. This
+  tool exists partly to compare three routes to more C5 supply: <b>recombinant MVA</b> (escape the native cap),
+  <b>IUP feed</b> (bypass MVA entirely), or <b>both</b> — see those presets. The IUP numbers are a heavy
+  extrapolation; they are directional, not quantitative.</p>
+
+  <h3>Push vs pull (read this before trusting a single-enzyme result)</h3>
+  <p>A well-known trap: <b>pushing one supply enzyme without downstream "pull" underperforms.</b> In yeast,
+  overexpressing HMGR alone floods the MVA pathway but the carbon leaks to squalene/ergosterol rather than
+  reaching the product, and sterol feedback / HMGR degradation cap the output; adding a GGPPS/FPPS pull
+  redirects it (e.g. Tokuhiro 2009: HMG1 alone → mostly squalene; adding a BTS1–ERG20 pull → mostly GGOH). Ma
+  et&nbsp;al. found tHMGR <i>on top of</i> the IUP still helped — push and pull are complementary, not rivals.</p>
+  <p>In this model, "pull drives upstream flux" appears as <b>feedback relief</b>: downstream enzymes consume
+  FPP, FPP is the feedback signal on the native MVA enzymes, so a strong pull de-represses native supply.
+  Crucially this only acts on the <b>native</b> copies — recombinant cisgenic copies are feedback-free
+  (semi-synthetic promoter), so they don't respond to pull. The effect is clearest in <b>yeast mode</b> (strong
+  feedback, default 2.5): add a strong SaGGPPs/FPPS pull and native MVA flux climbs; the same pull does nothing
+  extra to a recombinant MVA cassette. In <b>BSF</b> the same coupling exists but is deliberately weak (insect
+  feedback default 0.5) — which is itself the point: insects are sterol auxotrophs, so (a) there's <b>no
+  squalene leak</b> stealing the pushed carbon and (b) <b>little sterol feedback</b> to relieve. Both make a
+  straight tHMGR push relatively <i>more</i> useful in BSF than the yeast literature implies — though a single
+  push with no downstream capacity still just piles up precursors (watch the pools).</p>
+  <p style="color:var(--gold)"><b>Deep-research flag:</b> the pull→push coupling is modelled crudely (FPP as the
+  sole feedback signal, only on native enzymes). The yeast nuance — that extra copies carrying <i>native</i>
+  regulatory elements would also respond to pull — is deliberately not modelled, since BSF cassettes use
+  semi-synthetic promoters. Revisit whether BSF has meaningful product feedback at all (farnesol/JH-mediated?),
+  and whether FPP, GGPP, or a sterol-independent signal is the right inhibitor. Expand or discard as data lands.</p>
 
   <h3>Using your own data (the frame of reference)</h3>
   <p>The numbers are relative, but they have a hook for real data: the <b>native level</b> column. When you get
@@ -708,28 +780,50 @@ document.getElementById('docsBody').innerHTML = `
   reference by making a preset and setting that organism's native levels; the WT/Y27R switch lets you line the
   cyclase up against new mutant data.</p>
 
-  <h3>Parameters &amp; provenance</h3>
-  <p>Starter values, mostly extrapolated from yeast / <i>Drosophila</i>; confidence tagged. These are the ones
-  to refine in a Deep Research pass.</p>
-  <table class="params"><thead><tr><th>Parameter</th><th>Value</th><th>Meaning</th><th>Confidence</th></tr></thead><tbody>
-    <tr><td>native MVA (insect)</td><td>0.1×</td><td>BSF native MVA throughput vs yeast — low; set from transcriptomics</td><td>low</td></tr>
-    <tr><td>ATP / IPP</td><td>3</td><td>MVA pathway ATP cost per IPP</td><td>high</td></tr>
-    <tr><td>NADPH / mevalonate</td><td>2</td><td>HMGR reductant cost</td><td>high</td></tr>
-    <tr><td>IDI activity (insect)</td><td>1× (unknown)</td><td>the key uncertainty; controls the DMAPP primer</td><td>low</td></tr>
-    <tr><td>IDI Keq (DMAPP/IPP)</td><td>0.25</td><td>interconversion equilibrium</td><td>med</td></tr>
-    <tr><td>native GGPPS</td><td>0.2×</td><td>low baseline Drosophila quemao-type</td><td>low</td></tr>
-    <tr><td>ATP / isopentenol</td><td>2</td><td>IUP bypass kinase cost; no NADPH</td><td>high</td></tr>
-    <tr><td>CarB (desaturase)</td><td>0.5×</td><td>slow step — frequent internal bottleneck</td><td>low</td></tr>
-    <tr><td>cyclase Km / Ki (WT)</td><td>2 / 1.5</td><td>substrate inhibition, rescaled to the model's pool range</td><td>med</td></tr>
-    <tr><td>cyclase Ki (Y27R)</td><td>∞</td><td>inhibition removed (Ma 2022)</td><td>med</td></tr>
-    <tr><td>CrtW-Z accessibility</td><td>0.2 → 0.8</td><td>cytosolic vs lipid-droplet-targeted (Ma 2021)</td><td>low</td></tr>
-    <tr><td>squalene sink</td><td>off (insect)</td><td>dominant yeast drain that insects lack</td><td>high</td></tr>
-    <tr><td>growth dilution</td><td>0.05</td><td>first-order turnover so end-products reach steady state</td><td>n/a</td></tr>
+  <h3>Enzymes — how BSF differs from yeast, and what it implies</h3>
+  <p>Relative starter values; the "rough estimate" column is an order-of-magnitude anchor and a place to start
+  looking for real data, <b>not</b> a measured value. Almost everything here is the target of the Deep Research
+  pass. Insect-specific reasoning leans on one big fact: <b>insects are sterol auxotrophs</b> — they cannot make
+  cholesterol/ergosterol, so the MVA pathway serves only dolichol, ubiquinone, prenylation and juvenile-hormone
+  precursors, with no sterol branch and little sterol feedback.</p>
+  <table class="params"><thead><tr><th>Enzyme</th><th>vs yeast</th><th>Implication for BSF</th><th>Rough est. (rel.)</th></tr></thead><tbody>
+    <tr><td>Thiolase + HMGS</td><td>Lower flux demand — no sterol sink to feed</td><td>Often the real entry cap; recombinant overexpression unlocks the most</td><td>~0.1× yeast</td></tr>
+    <tr><td>HMGR</td><td>Not sterol-feedback-regulated / not sterol-degraded as in yeast</td><td>tHMGR (recombinant, feedback-free) push has a cleaner path than in yeast — but needs downstream pull</td><td>~0.1× yeast</td></tr>
+    <tr><td>MVK·PMK·MVD</td><td>Present; lower throughput</td><td>Co-limits supply with thiolase; raise alongside HMGR</td><td>~0.1× yeast</td></tr>
+    <tr><td>IDI</td><td>Activity poorly characterised in insects</td><td><b>Key unknown.</b> Weak IDI starves the DMAPP primer; prenol feed bypasses it</td><td>1× (assumed)</td></tr>
+    <tr><td>FPPS</td><td>Conserved (Drosophila Fpps well studied)</td><td>Rarely the bottleneck; fairly safe assumption</td><td>~1× yeast</td></tr>
+    <tr><td>Native GGPPS</td><td>Low-abundance (quemao-type); yeast BTS1 also modest</td><td>Too low alone for carotenoids — why SaGGPPs is added</td><td>~0.2× yeast</td></tr>
+    <tr><td>IUP (CK + IPK)</td><td>Absent in both; engineered</td><td>Only route to use fed isopentenols; CK rate-limiting</td><td>n/a (heterologous)</td></tr>
+    <tr><td>SaGGPPs</td><td>Heterologous (same as yeast work)</td><td>Flow restrictor; strong + WT cyclase → lycopene pile-up</td><td>tunable</td></tr>
+    <tr><td>CarRP (Y27R)</td><td>Heterologous; we use Y27R, not WT</td><td>Bifunctional; Y27R removes the cyclase substrate inhibition</td><td>tunable</td></tr>
+    <tr><td>CarB</td><td>Heterologous; desaturase</td><td>Slow step — a frequent internal bottleneck once supply is fixed</td><td>~0.5× the others</td></tr>
+    <tr><td>CrtW-Z</td><td>Heterologous; needs O₂ + reductant</td><td>Accessibility-limited; target to lipid droplets (0.2 → 0.8)</td><td>tunable</td></tr>
+    <tr><td>Squalene synthase</td><td><b>Absent in insects</b> (present + dominant in yeast)</td><td>No sterol leak — the single biggest reason BSF should out-convert yeast per unit push</td><td>0 (insect)</td></tr>
   </tbody></table>
+
+  <h3>Baseline metabolite pools — what to expect, and where to find data</h3>
+  <p>Pools here are relative (steady-state outputs, not inputs), but the table notes plausible real ranges to
+  validate against. Intracellular prenyl-diphosphate pools are generally low (sub-µM to low-µM); a fat circle in
+  the map flags one that's abnormally high <i>relative to the rest of this network</i>.</p>
+  <table class="params"><thead><tr><th>Pool</th><th>Role in BSF</th><th>vs yeast</th><th>Plausible real range</th></tr></thead><tbody>
+    <tr><td>HMG-CoA / mevalonate</td><td>MVA intermediates</td><td>Less buffered; no sterol-driven turnover</td><td>low µM</td></tr>
+    <tr><td>IPP / DMAPP</td><td>C5 building blocks; DMAPP is the SaGGPPs primer</td><td>DMAPP/IPP ratio set by IDI (Keq≈0.25)</td><td>sub-µM–µM</td></tr>
+    <tr><td>FPP</td><td>Branch point: prenylation, dolichol, CoQ, JH — and the feedback signal</td><td>No squalene drain; likely higher headroom than yeast</td><td>sub-µM</td></tr>
+    <tr><td>GGPP</td><td>Carotenoid precursor (2 → phytoene)</td><td>Low natively (low GGPPS); the lever SaGGPPs targets</td><td>sub-µM</td></tr>
+    <tr><td>phytoene / lycopene</td><td>Carotenoid intermediates</td><td>Heterologous; lycopene pile-up = cyclase-limited</td><td>µM if accumulating</td></tr>
+    <tr><td>β-carotene / astaxanthin</td><td>Products; lipid-droplet-sequestered</td><td>Günther: ~tens of ng/larva order — anchor here</td><td>ng–µg / larva</td></tr>
+  </tbody></table>
+
+  <h3>Cofactor / energetic costs</h3>
+  <p>HMGR costs 2 NADPH per mevalonate; the lower MVA costs 3 ATP per IPP; the IUP costs ~2 ATP per isopentenol
+  and <b>no NADPH</b> (its main thermodynamic advantage); astaxanthin costs O₂ + reductant. The cost panel sums
+  these for the running pathway so you can see the IUP's lower reductant burden vs MVA.</p>
+
   <p style="color:var(--faint);font-size:11.5px">Steady state solved directly (dC/dt=0) by damped Newton with a
   finite-difference Jacobian (11 species); leverage bars are ±1% finite-difference flux-control coefficients.
-  All editable kinetics live in the <code>V</code>, <code>KM</code>, <code>LCY</code> and <code>NATIVE_DEF</code>
-  objects at the top of the page source.</p>
+  All editable kinetics live in the <code>V</code>, <code>KM</code>, <code>LCY</code>, <code>NATIVE_DEF</code>
+  and <code>ENZYMES</code> objects at the top of the page source — change a number there and the whole map,
+  ranking and diagnostics update.</p>
 `;
 
 // ── init ─────────────────────────────────────────────────────────────────────

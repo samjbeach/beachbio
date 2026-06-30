@@ -18,8 +18,16 @@ tool page itself.
   term and scales the enzyme by its cassette's promoter strength. Recombinant feedback-free
   HMGR *is* "tHMGR".
 - **Cassettes.** Recombinant/heterologous enzymes are grouped into cassettes; one
-  promoter-strength slider scales every enzyme in a cassette together. This is the main
-  "what should we build" control.
+  promoter-strength slider scales every enzyme in a cassette together. An enzyme can sit
+  in **several cassettes at once** — its expression is the sum of those promoters.
+- **IUP is a buildable module.** BSF has no native route from fed isopentenols into the
+  pathway, so the prenol/isoprenol feed does nothing until you add choline kinase + IPK
+  (the IUP module) to a cassette. Lets you compare recombinant-MVA vs IUP-feed vs both.
+- **Push vs pull.** Downstream consumption relieves FPP feedback on *native* MVA enzymes
+  (recombinant copies are feedback-free), so a strong pull lifts native supply — strongest
+  in yeast mode; weak in BSF (sterol auxotroph → little feedback, no squalene leak), which
+  is why a tHMGR push works relatively better in BSF. Modelled crudely; flagged for the
+  Deep Research pass.
 - **Native expression is data-settable** (the "native level" column) — the hook for
   plugging in transcriptomics/proteomics of the endogenous MVA/prenyl enzymes.
 - **Steady state** solved directly (dC/dt = 0) by damped Newton with a finite-difference
