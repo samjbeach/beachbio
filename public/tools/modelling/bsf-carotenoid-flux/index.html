@@ -144,6 +144,8 @@
     <div class="inline" style="margin-top:12px">
       <label class="toggle">host&nbsp;
         <select id="organism"><option value="insect">BSF fat body</option><option value="yeast">Yeast (validation)</option></select></label>
+      <label class="toggle" title="Which native-expression table feeds the endogenous enzymes' 'native level' column. Transcript-derived is a single-sample BSF developmental RNA-seq snapshot at the Lsp2-active larval window (8-12d) — a real relative signal, but mRNA-only and unreplicated. See README.">native levels&nbsp;
+        <select id="nativesrc"><option value="placeholder">Placeholder (uniform)</option><option value="transcript">BSF transcript (Lsp2 window)</option></select></label>
     </div>
   </div>
 
@@ -355,6 +357,7 @@ const PARAM = {
   lcy_Ki:      {disp:'mech real, value unmeasured', unit:'µM', src:'Mucor/yeast cyclase (Ma 2022)', conf:'mech'},
   saggpps_Km:  {disp:'no Km/kcat', unit:'—', src:'yeast host (DMAPP-direct route real)', conf:'gap'},
   trunk:       {disp:'no insect kinetics', unit:'—', src:'thiolase/AACT/HMGS/MVD/HMGR', conf:'gap'},
+  native_transcript: {disp:'thiolase 0.10 / IDI 0.074 / FPPS 0.037 / HMGR 0.026 / GGPPS 0.018 / lower-MVA 0.0094', unit:'rel.', src:'BSF dev. RNA-seq, single time-course, 8-12d larva (Lsp2 window) — "native levels" toggle', conf:'med'},
 };
 
 // Working (model-scale) constants WITH [lo,hi] ranges — these are what the ensemble samples.
@@ -393,6 +396,18 @@ const KM_COF = 0.8;        // half-saturation of the shared pools
 const NATIVE_DEF = {
   insect: { thiolase:0.1, hmgr:0.1, mva_lower:0.1, idi:1, fpps:1, ggpps_native:0.2 },
   yeast:  { thiolase:1,   hmgr:1,   mva_lower:1,   idi:1, fpps:1, ggpps_native:0.5 },
+  // [native-src: transcript] BSF whole-body developmental RNA-seq (single time-course, no
+  // replicates), averaged over 8-and-12-day larva — the window "larval serum protein 2" (Lsp2)
+  // is transcriptionally active, i.e. the stage a fat-body construct would run in. Raw mRNA
+  // ratios span ~800-fold (thiolase >> mva_lower/PMK) — too extreme to use as a direct linear
+  // flux-capacity multiplier, so each is log-compressed toward thiolase (new = 0.1 *
+  // (mRNA_i/mRNA_thiolase)^0.35), preserving rank order and real relative spread without
+  // collapsing the low end to ~0. mva_lower is represented by phosphomevalonate kinase (PMK)
+  // alone, not an average of MVK/PMK/MVD — a lumped linear chain's throughput is set by its
+  // slowest member, and PMK reads far lower than MVD at every stage (mevalonate kinase itself
+  // has no matching annotation in the source data). See README "Real BSF developmental
+  // expression data" for the full gene table and derivation caveats.
+  insect_transcript: { thiolase:0.10, hmgr:0.026, mva_lower:0.0094, idi:0.074, fpps:0.037, ggpps_native:0.018 },
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -408,7 +423,10 @@ function blankEnzymeState(){
   return o;
 }
 function setNativeDefaults(host){
-  const d=NATIVE_DEF[host];
+  // insect + nativeSrc='transcript' redirects to the transcript-derived table above; every
+  // other call (yeast, or insect + 'placeholder') is unaffected.
+  const key = (host==='insect' && STATE.nativeSrc==='transcript') ? 'insect_transcript' : host;
+  const d=NATIVE_DEF[key];
   ENZYMES.filter(e=>e.kind==='endo').forEach(e=>{ STATE.enzymes[e.id].nativeExpr = (d[e.id]!=null?d[e.id]:1); });
   // Insects are sterol auxotrophs — little/no sterol feedback on MVA — so native
   // feedback is much weaker than in yeast (ergosterol-repressed). This is part of
@@ -432,6 +450,7 @@ function baseState(){
   STATE.idi_host='insect';     // [§6] IDI equilibrium toggle: insect (0.4–0.7) vs microbial host (2–5)
   STATE.fas_draw=1;            // [§5] FAS / lipogenesis draw on the shared acetyl-CoA + NADPH pools
   STATE.atp_headroom=3;        // [§5] ATP headroom that the IUP's 2-ATP-per-C5 cost is gated against
+  STATE.nativeSrc='placeholder'; // native-level source: 'placeholder' (uniform guess) vs 'transcript' (BSF RNA-seq, Lsp2 window)
   setNativeDefaults('insect');
 }
 function cassetteLevel(id){ const c=STATE.cassettes.find(c=>c.id===id); return c?c.level:1; }
@@ -919,12 +938,14 @@ function syncPlain(){
   document.getElementById('c_saggpps_dmapp').checked=STATE.saggpps_dmapp;
   document.getElementById('organism').value=STATE.organism;
   document.getElementById('idi_host').value=STATE.idi_host;
+  document.getElementById('nativesrc').value=STATE.nativeSrc;
 }
 PLAIN.forEach(k=>{ const inp=document.getElementById('r_'+k); inp.addEventListener('input',()=>{ STATE[k]=+inp.value;
   document.getElementById('v_'+k).textContent=(+inp.value).toFixed(2); recompute(); }); });
 document.getElementById('idi_host').addEventListener('change',e=>{ STATE.idi_host=e.target.value; recompute(); });
 document.getElementById('c_saggpps_dmapp').addEventListener('change',e=>{ STATE.saggpps_dmapp=e.target.checked; recompute(); });
 document.getElementById('organism').addEventListener('change',e=>{ STATE.organism=e.target.value; setNativeDefaults(e.target.value); lastX=null; buildAll(); syncPlain(); recompute(); });
+document.getElementById('nativesrc').addEventListener('change',e=>{ STATE.nativeSrc=e.target.value; setNativeDefaults(STATE.organism); lastX=null; buildAll(); syncPlain(); recompute(); });
 document.getElementById('addCas').addEventListener('click',()=>{ STATE.cassettes.push({id:'cas_'+Date.now(),name:'Cassette '+(STATE.cassettes.length+1),level:1}); buildCassettes(); });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -971,6 +992,7 @@ function loadState(){
       if(STATE.fas_draw==null) STATE.fas_draw = (STATE.lipid_priority!=null?STATE.lipid_priority:1);
       if(STATE.atp_headroom==null) STATE.atp_headroom=3;
       if(STATE.idi_host==null) STATE.idi_host='insect';
+      if(STATE.nativeSrc==null) STATE.nativeSrc='placeholder';
       return true;
     } }catch(e){}
   return false;
@@ -1081,6 +1103,25 @@ document.getElementById('docsBody').innerHTML = `
   document: every new dataset should move a specific number here.</p>
   <p>What it will tell you well: the <i>order</i> of bottlenecks, whether an enzyme is worth adding, and the
   direction of a change. What it won't tell you: an absolute titre.</p>
+  <p>The <b>native levels</b> toggle (top panel) switches the endogenous enzymes' native-level column between
+  the uniform placeholder guess and a first real data point: a BSF whole-body developmental RNA-seq screen,
+  read at the 8–12&nbsp;day larva window (the stage <b>Lsp2</b> — larval serum protein 2 — is transcriptionally
+  active, i.e. roughly when a fat-body construct would be running). Raw mRNA ratios between these steps span
+  ~800-fold, which is too extreme to use as a direct 1:1 flux-capacity multiplier, so the transcript table is
+  log-compressed toward the thiolase placeholder value (rank order and relative spread preserved, extremes
+  damped). It's a real relative signal, not a calibration: single sample, no replicates, mRNA rather than
+  protein/flux, and the lumped lower-MVA node is represented by phosphomevalonate kinase alone (its lowest,
+  most rate-limiting sub-step — mevalonate kinase has no matching annotation in the source data).</p>
+  <table class="params"><thead><tr><th>Model node</th><th>Gene</th><th>Locus</th></tr></thead><tbody>
+    <tr><td>thiolase</td><td>Acetyl-CoA acetyltransferase (mito + cyto)</td><td>LOC119654848, LOC119649954</td></tr>
+    <tr><td>hmgr</td><td>HMG-CoA reductase</td><td>LOC119652831</td></tr>
+    <tr><td>mva_lower</td><td>Phosphomevalonate kinase (rate-limiting proxy); MVD LOC119658387; MVK unannotated</td><td>LOC119651040</td></tr>
+    <tr><td>idi</td><td>Isopentenyl-diphosphate Δ-isomerase 1</td><td>LOC119651563</td></tr>
+    <tr><td>fpps</td><td>Farnesyl pyrophosphate synthase (active paralog)</td><td>LOC119657789</td></tr>
+    <tr><td>ggpps_native</td><td>Geranylgeranyl pyrophosphate synthase</td><td>LOC119647985</td></tr>
+  </tbody></table>
+  <p style="color:var(--faint);font-size:11.5px">Full expression table across all 11 developmental stages, plus
+  derivation notes and caveats, lives in the tool's <code>README.md</code>.</p>
 
   <h3>Validation</h3>
   <p>The <b>Yeast validation</b> preset (squalene sink on, strong SaGGPPs, WT cyclase) reproduces the known
@@ -1186,7 +1227,10 @@ document.getElementById('docsBody').innerHTML = `
     <li><b>Lumped multi-step reactions hide internal bottlenecks.</b> Thiolase+HMGS, MVK·PMK·MVD, and especially
       <b>CarB (four desaturations: phytoene → phytofluene → ζ-carotene → neurosporene → lycopene)</b> are each one
       step. If the true bottleneck is a single desaturation or an intermediate piling up, the model can't see it —
-      it just reports "CarB slow."</li>
+      it just reports "CarB slow." The BSF transcript data (native levels toggle) gives one partial look inside
+      MVK·PMK·MVD: PMK reads far lower than MVD at every developmental stage, consistent with PMK (not MVD) being
+      the internal rate-limiter — hence <code>mva_lower</code>'s transcript value is anchored to PMK, not an
+      average. Single-sample mRNA, though, not a replicated or protein-level measurement.</li>
     <li><b>IDI activity &amp; rate-law form.</b> IDI is the flagged key unknown, and the DMAPP-direct route hangs
       on the DMAPP:IPP split it sets. v3 exposes the Keq as an insect (0.4–0.7) vs microbial-host (2–5) toggle,
       but the insect turnover and the reversible-rate form still want real kinetics.</li>
