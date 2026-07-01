@@ -511,7 +511,9 @@ function rates(x, P){
   const iup = Math.min(E('ck'), E('ipk'));
   const prenolPot = iup*V.ck*P.feedstock_viability*P.prenol_in/(KM_FEED.ck_prenol+P.prenol_in);   // → DMAPP, 2 ATP
   const isoPot    = iup*V.ck*P.feedstock_viability*P.isoprenol_in/(KM_FEED.ck_iso+P.isoprenol_in); // → IPP, 2 ATP
-  const atpFactor = P.atp_headroom/(P.atp_headroom + 2*(prenolPot+isoPot));   // soft penalty: 2 ATP per C5
+  // +1e-9: without it, headroom=0 with no IUP demand (module not built, or built with feed=0)
+  // is 0/0 = NaN, which then propagates through the whole steady-state solve.
+  const atpFactor = P.atp_headroom/(P.atp_headroom + 2*(prenolPot+isoPot) + 1e-9);   // soft penalty: 2 ATP per C5
   r.atpFactor=atpFactor;
   r.prenolCK = prenolPot*atpFactor;
   r.isoCK    = isoPot*atpFactor;
