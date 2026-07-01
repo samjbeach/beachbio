@@ -296,7 +296,7 @@ const ENZYMES = [
   {id:'thiolase',     name:'Thiolase + HMGS', rxn:'acetyl-CoA → HMG-CoA', kind:'endo', regFeedback:true, cost:'~3 acetyl-CoA',
     note:'Condenses acetyl-CoA into the MVA pathway. Lumped thiolase + HMG-CoA synthase. Draws on the shared acetyl-CoA pool — competes with FAS. PROXY kinetics — no insect data.'},
   {id:'hmgr',         name:'HMGR', rxn:'HMG-CoA → mevalonate', kind:'endo', regFeedback:true, cost:'2 NADPH',
-    note:'The classic rate-limiting MVA step. Regulation is transcriptional/ERAD/AMPK, so a recombinant truncated copy (tHMGR) genuinely escapes it. Consumes 2 NADPH from the shared pool — competes with FAS. PROXY kinetics.'},
+    note:'The classic rate-limiting MVA step. Regulation is transcriptional/ERAD/AMPK, so a recombinant truncated copy (tHMGR) genuinely escapes it. Consumes 2 NADPH from the shared pool — competes with FAS. PROXY kinetics. CAVEAT: regFeedback lumps three distinct mechanisms (sterol-SREBP — irrelevant, insects lack sterols; Insig/ERAD — escaped by truncation; AMPK phosphorylation — conserved in insects per DeBose-Boyd-lineage work) into one bucket that a cassette copy escapes 100%. In mammalian HMGR the AMPK site sits in the catalytic domain, not the truncated membrane domain, so whether a truncated tHMGR genuinely escapes AMPK throttling too is unconfirmed, not just assumed-relaxed like ERAD.'},
   {id:'mva_lower',    name:'MVK · PMK · MVD', rxn:'mevalonate → IPP', kind:'endo', productInhibition:true, variant:true, variants:['WT','FBR'], cost:'3 ATP',
     note:'Lower MVA, lumped on MVK. MVK is competitively inhibited AT THE ATP SITE by GPP/FPP/GGPP — a property of the enzyme, NOT escaped by a strong promoter. Overexpressing NATIVE MVK stays throttled when prenyl-PPs are high; only a feedback-resistant (FBR) mutant releases it. This is the cisgenic-vs-engineered decision. MVK Km/Ki are insect-direct (AaMVK).'},
   {id:'idi',          name:'IDI', rxn:'IPP ⇌ DMAPP', kind:'endo', keyUnknown:true,
@@ -304,7 +304,7 @@ const ENZYMES = [
   {id:'fpps',         name:'FPPS', rxn:'IPP + DMAPP → GPP → FPP', kind:'endo',
     note:'Builds the C10/C15 prenyl diphosphates. Allylic preference GPP>DMAPP>IPP (Aedes/Drosophila, qualitative — no absolute Km).'},
   {id:'ggpps_native', name:'Native GGPPS', rxn:'FPP + IPP → GGPP', kind:'endo',
-    note:'BSF\'s own GGPP synthase (Drosophila quemao-type). FPP-preferring, product-inhibited by GGPP. Low baseline.'},
+    note:'BSF\'s own GGPP synthase (Drosophila quemao-type). FPP-preferring, product-inhibited by GGPP. Low baseline. CAVEAT: the GGPP product inhibition and CfGGPPS-style FPP substrate inhibition at low IPP described here are NOT in the rate law (r.ggn is a plain bimolecular term, no GGPP- or FPP-dependent inhibition) — only the low fixed Vmax (0.2× native level) represents this enzyme being a weak route. Fine while every recommended construct bypasses it with SaGGPPS; would need a real inhibition term to trust a native-GGPPS-only scenario.'},
   {id:'ck',           name:'Choline kinase (IUP)', rxn:'prenol/isoprenol → mono-P', kind:'hetero', cost:'1 ATP',
     note:'IUP step 1. BSF has NO native route from fed isopentenols into the pathway — you must add this. Rate-limiting (high, mM-range Km for the alcohol; strong prenol>isoprenol kcat asymmetry). Needs IPK downstream or the mono-phosphate dead-ends.'},
   {id:'ipk',          name:'IPK (IUP)', rxn:'mono-P → IPP/DMAPP', kind:'hetero', cost:'1 ATP',
@@ -499,12 +499,18 @@ function rates(x, P){
   r.idi = E('idi')*V.idi*(IPP - DMAPP/K.keq)/(K.km_gen+IPP+DMAPP);   // net IPP→DMAPP (signed); Keq host-dependent
   r.fpps1 = bi(DMAPP,IPP, E('fpps')*V.fpps, K.km_gen,K.km_gen);      // → GPP
   r.fpps2 = bi(GPP,IPP,   E('fpps')*V.fpps, K.km_gen,K.km_gen);      // → FPP
+  // CAVEAT: no GGPP product-inhibition / FPP substrate-inhibition term on r.ggn — see the
+  // ggpps_native ENZYMES note. Only the low fixed Vmax stands in for "weak native route."
   r.ggn = bi(FPP,IPP, E('ggpps_native')*V.ggn, K.km_gen,K.km_gen);
   r.saF = bi(FPP,IPP, E('saggpps')*V.saF, K.km_gen,K.km_gen);
   // [§3.2] SaGGPPs DMAPP-direct route: DMAPP + 3 IPP → GGPP. Effective kinetic order in IPP
   // raised to n≈2 (Hill) — the route only runs with IPP in genuine EXCESS, which the old
   // first-order law hid. Couples tightly to the IDI question (IDI sets the DMAPP:IPP split).
   r.saD = (STATE.saggpps_dmapp?1:0)*E('saggpps')*V.saD*(DMAPP/(K.km_gen+DMAPP))*(IPP*IPP/(K.saD_K*K.saD_K+IPP*IPP));
+  // NOTE: r.farn is a fixed, tiny, UN-exposed drain (k_farn=0.05, no UI slider, no map node/
+  // edge) — it exists only to close the FPP mass balance. This is NOT a modelled JH/farnesol
+  // branch (no dynamics, no feedback coupling to MVK/HMGR, no life-stage cycling); treat the
+  // "JH/farnesol branch isn't modelled" line in the Known Gaps write-up as accurate in spirit.
   r.dol=P.k_dolichol*FPP; r.coq=P.k_CoQ*FPP; r.farn=Math.max(P.k_farn,0.01)*FPP;
   r.squal=P.squalene_on?SINK.squalene*FPP:0; r.ggpren=Math.max(P.k_ggpren,0.01)*GGPP;
   // [§3.1] 2 GGPP → phytoene: cooperative (Hill n=2) in GGPP, so phytoene synthesis is
@@ -1158,12 +1164,21 @@ document.getElementById('docsBody').innerHTML = `
       rests on insects lacking the squalene→sterol drain and its feedback. Confirm BSF truly lacks squalene
       synthase (vs only the downstream sterol enzymes), and quantify the <i>other</i> native FPP/GGPP demands —
       dolichol, ubiquinone, prenylation, and especially the <b>juvenile-hormone / farnesol branch, which isn't
-      modelled</b> and could be a real, developmentally-regulated FPP sink in fat body.</li>
-    <li><b>Transcriptional feedback is still a cartoon.</b> v3 split feedback correctly into active-site product
-      inhibition (MVK — now insect-direct) and transcriptional <code>regFeedback</code> — but the latter is still
-      FPP as the sole signal (Hill n=2, arbitrary threshold), only on native copies. Whether BSF MVA has
-      meaningful <i>transcriptional</i> product feedback at all, and via what (farnesol? JH? a sterol sensor it
-      may not have?), is open and sets how much downstream pull relieves native supply.</li>
+      modelled</b> and could be a real, developmentally-regulated FPP sink in fat body. (There is a <code>k_farn</code>
+      constant in the residual for FPP mass balance, but it's a fixed, un-exposed, no-node placeholder, not an
+      actual JH branch with dynamics or feedback — the "isn't modelled" framing above is accurate in spirit.)</li>
+    <li><b>Transcriptional feedback is still a cartoon — and conflates two different mechanisms on HMGR.</b> v3
+      split feedback correctly into active-site product inhibition (MVK — now insect-direct) and transcriptional
+      <code>regFeedback</code> — but the latter is still FPP as the sole signal (Hill n=2, arbitrary threshold),
+      only on native copies. Whether BSF MVA has meaningful <i>transcriptional</i> product feedback at all, and
+      via what (farnesol? JH? a sterol sensor it may not have?), is open and sets how much downstream pull relieves
+      native supply. Separately, <code>regFeedback</code> itself bundles Insig/ERAD (relaxed by truncation — solid)
+      with AMPK phosphorylation (conserved in insects, and in mammalian HMGR the AMPK site sits in the catalytic
+      domain that truncation keeps, not the membrane domain it removes) — a recombinant/cassette copy is modelled
+      as escaping <i>both</i> 100%, which is optimistic for the AMPK half specifically. Reviewed against the
+      Deep Research report and judged unlikely to change today's rankings/recommendations (the Yarrowia tHMGR
+      precedent the report cites shows real gains despite this same theoretical risk), but flagged here as an
+      assumption, not a measurement.</li>
   </ol>
 
   <p style="color:var(--ink)"><b>B · Kinetic &amp; stoichiometric abstractions (affect which step looks limiting)</b></p>
@@ -1178,6 +1193,12 @@ document.getElementById('docsBody').innerHTML = `
     <li><b>CarRP / cyclase numbers are anchored to behaviour, not measured.</b> The PSY:cyclase turnover ratio and
       the substrate-inhibition Km/Ki are scaled so the WT-vs-Y27R validation emerges; the mechanism is
       well-evidenced (Ma 2022) but the numeric Ki is unmeasured. Replace with measured values when they land.</li>
+    <li><b>Native GGPPS product/substrate inhibition is asserted but not in the rate law.</b> The report's Key
+      Finding is that type-III (native) GGPPS is competitively product-inhibited by GGPP and, per CfGGPPS,
+      substrate-inhibited by FPP at low IPP — the ENZYMES note says so, but <code>r.ggn</code> is a plain
+      bimolecular term with no such inhibition; only the low fixed Vmax (0.2× native level) stands in. Judged
+      low-impact today because every recommended construct routes around native GGPPS via SaGGPPS anyway, but a
+      native-GGPPS-only scenario would currently overstate its contribution once GGPP piles up.</li>
   </ol>
 
   <p style="color:var(--ink)"><b>C · Structural simplifications</b></p>
@@ -1189,6 +1210,11 @@ document.getElementById('docsBody').innerHTML = `
     <li><b>ATP is reported, not enforced (except the IUP gate).</b> v3 makes acetyl-CoA and NADPH enforced shared
       pools and gates the IUP on ATP headroom, but ATP elsewhere is still only summed. A scenario can still demand
       more ATP than the cell could plausibly regenerate without the model pushing back.</li>
+    <li><b>No lever for boosting acetyl-CoA supply itself.</b> <code>ACOA_IN</code> is a hardcoded constant, not a
+      construct option. The report's Stage-1 recommendation to test co-expressing acetyl-CoA-supply modules
+      (ATP-citrate lyase / acetyl-CoA synthetase) can't currently be represented as a cassette — you can raise the
+      shared-pool <i>demand</i> side (thiolase, HMGR, FAS draw) but not the <i>supply</i> side. Zero effect on
+      today's outputs (nothing is computed wrong), but it's a real gap in what constructs the tool can explore.</li>
     <li><b>The two shared pools are coarse.</b> acetyl-CoA and NADPH are scalar bounded pools with a capacity-
       demand split and a single FAS-draw knob — enough to change the ranking honestly, but not a real metabolic
       cofactor balance, and with no developmental staging.</li>
