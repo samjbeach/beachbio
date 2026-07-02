@@ -12,13 +12,23 @@
 <link rel="stylesheet" href="/style.css">
 <style>
   /* ── layout: map beside results ─────────────────────────────────────── */
-  .maprow { display:grid; grid-template-columns: 360px 1fr; gap:16px; align-items:start; }
-  @media (max-width:900px){ .maprow{ grid-template-columns:1fr; } }
+  /* This view is built for desktop: it's an instrument panel meant to be read on a
+     real monitor with a mouse, not a phone. We keep a floor of "doesn't break" on
+     narrow screens (stacking, horizontal scroll) but every sizing decision below
+     is made for the desktop case first and is not softened to fit mobile. */
+  .maprow { display:grid; grid-template-columns: 660px 1fr; gap:18px; align-items:start; }
+  @media (max-width:1400px){ .maprow{ grid-template-columns:1fr; } }
 
-  .mapwrap { background:var(--field); border:1px solid var(--line); border-radius:10px; padding:6px; overflow:auto; max-height:78vh; }
-  svg.flux { display:block; width:340px; height:auto; }
-  .node-lab { font-family:var(--sans); font-size:11px; fill:var(--ink); font-weight:500; }
-  .node-val { font-family:var(--mono); font-size:8.5px; fill:var(--faint); }
+  .mapwrap { background:var(--field); border:1px solid var(--line); border-radius:10px; padding:8px; overflow:auto; max-height:88vh; }
+  svg.flux { display:block; width:640px; height:auto; }
+
+  /* metabolites are demoted to small hedged chips on the wire — never the hero number */
+  .mchip-ring { fill:var(--field); stroke:var(--faint); stroke-width:1.2; }
+  .mchip-tick { stroke:var(--cyan); stroke-width:2; stroke-linecap:round; }
+  .mchip-lab { font-family:var(--mono); font-size:8px; fill:var(--faint); }
+  .mchip-feed circle { stroke:var(--gold); }
+  .mchip-sink circle { stroke:var(--faint); opacity:.7; }
+
   .edge { fill:none; stroke-linecap:round; }
   .edge.endo   { stroke:var(--muted); }
   .edge.recomb { stroke:var(--cyan); }
@@ -29,8 +39,88 @@
   .edge.dash   { stroke-dasharray:5 4; }
   .edge-lab { font-family:var(--mono); font-size:8px; fill:var(--faint); }
 
+  /* ── enzyme boxes — the primary object on the map ───────────────────── */
+  .ebox { cursor:pointer; }
+  .ebox .body { fill:var(--field); stroke:var(--muted); stroke-width:1.3; rx:8; transition:stroke .25s ease, fill .25s ease, stroke-width .25s ease; }
+  .ebox.native .body     { stroke:var(--muted); stroke-width:1.2; }
+  .ebox.recomb .body     { stroke:var(--cyan); stroke-width:2; }
+  .ebox.hetero .body     { stroke:var(--accent); stroke-width:2; }
+  .ebox.engineered .body { stroke:var(--ok); stroke-width:2.4; fill:rgba(122,198,123,.07); }
+  .ebox.notbuilt .body   { stroke:var(--faint); stroke-width:1; stroke-dasharray:4 3; fill:transparent; opacity:.55; }
+  .ebox .ename { font-family:var(--sans); font-size:11px; font-weight:600; fill:var(--ink); }
+  .ebox .egene { font-family:var(--mono); font-size:8px; fill:var(--faint); }
+  .ebox:hover .body, .ebox.pinned .body { stroke-width:2.6; filter:drop-shadow(0 0 3px rgba(95,184,196,.35)); }
+
+  /* leverage indicator — the dominant quantitative cue on each box */
+  .levbar-track { fill:var(--inputbg); }
+  .levbar-range { opacity:.35; }
+  .levbar-med   { transition:height .35s ease, y .35s ease, fill .35s ease; }
+  .levbar.engineer .levbar-med { fill:var(--ok); }
+  .levbar.measure  .levbar-med { fill:url(#hatchGold); stroke:var(--gold); stroke-width:.6; }
+  .levbar.minor    .levbar-med { fill:var(--faint); }
+  .levbar.negative .levbar-med { fill:var(--warn); }
+  .conf-dot { stroke-width:1.2; transition:fill .25s ease; }
+  .conf-dot.high { fill:var(--ok); stroke:var(--ok); }
+  .conf-dot.med  { fill:var(--gold); stroke:var(--gold); }
+  .conf-dot.mech { fill:none; stroke:var(--cyan); }
+  .conf-dot.gap  { fill:none; stroke:var(--warn); }
+  .ebadge { font-family:var(--mono); font-size:7.2px; letter-spacing:.03em; fill:var(--faint); }
+
+  /* inhibition arcs — dashed, blunt ⊣ head, opacity ∝ current inhibition strength */
+  .inhib-arc { fill:none; stroke:var(--warn); stroke-dasharray:4 3.5; stroke-linecap:round; transition:opacity .4s ease, stroke .4s ease; }
+  .inhib-arc.released { stroke:var(--faint); opacity:.12 !important; }
+  .inhib-head { fill:none; stroke:var(--warn); stroke-linecap:round; transition:opacity .4s ease, stroke .4s ease; }
+  .inhib-head.released { stroke:var(--faint); opacity:.12 !important; }
+  .inhib-lab { font-family:var(--mono); font-size:7.5px; fill:var(--warn); }
+
+  /* AND-junctions — multi-substrate requirement */
+  .and-glyph circle { fill:var(--field); stroke:var(--muted); stroke-width:1; }
+  .and-glyph text { font-family:var(--mono); font-size:7px; fill:var(--muted); }
+
+  /* substrate-inhibition self-loop */
+  .selfloop { fill:none; stroke:var(--warn); stroke-dasharray:3.5 3; stroke-linecap:round; transition:opacity .35s ease; }
+  .selfloop.off { opacity:.1; }
+
+  /* competition / leak edges — lost flux drawn going the "wrong way" */
+  .leak { stroke:#5a4a3a; stroke-linecap:round; }
+  .leak-lab { font-family:var(--mono); font-size:7.5px; fill:var(--faint); }
+  .leak-term circle { fill:var(--field); stroke:var(--faint); stroke-dasharray:2 2; }
+  .leak-term text { font-family:var(--mono); font-size:7px; fill:var(--faint); }
+
+  /* shared-resource strip */
+  .resstrip-lab { font-family:var(--mono); font-size:8px; fill:var(--muted); }
+  .resstrip-track { fill:var(--inputbg); }
+  .resstrip-fill { fill:var(--cyan); transition:width .35s ease; }
+  .resstrip-fill.warn { fill:var(--warn); }
+
+  .mech-layer { transition:opacity .3s ease; }
+  .mech-layer.hidden { opacity:0; pointer-events:none; }
+
+  .maptoggles { display:flex; flex-wrap:wrap; gap:12px; font-family:var(--mono); font-size:10px; color:var(--muted); margin:8px 2px 0; }
+  .maptoggles label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+
   .legend { display:flex; flex-wrap:wrap; gap:10px; font-family:var(--mono); font-size:9.5px; color:var(--muted); margin:6px 2px 0; }
   .legend i { display:inline-block; width:16px; height:3px; border-radius:2px; vertical-align:middle; margin-right:4px; }
+  .legend i.box { width:11px; height:9px; border-radius:2px; background:transparent; border:1.4px solid var(--muted); }
+  .legend i.dash { background:none; border-top:2px dashed var(--warn); height:0; }
+  .legend i.ring { width:9px; height:9px; border-radius:50%; background:transparent; border:1.2px solid var(--faint); }
+
+  /* ── enzyme inspector — hover reveal, click to pin ───────────────────── */
+  .inspector { background:var(--field); border:1px solid var(--line); border-radius:10px; padding:12px 14px; font-size:12px; color:var(--muted); line-height:1.55; min-height:64px; }
+  .inspector .insp-empty { color:var(--faint); font-family:var(--mono); font-size:11px; }
+  .inspector h3 { margin:0 0 6px; font-size:13.5px; color:var(--ink); display:flex; align-items:center; gap:8px; }
+  .inspector .insp-rxn { font-family:var(--mono); font-size:11px; color:var(--faint); margin-bottom:8px; }
+  .inspector .insp-row { display:flex; justify-content:space-between; gap:10px; padding:3px 0; border-bottom:1px solid rgba(35,75,79,.35); }
+  .inspector .insp-row:last-child { border-bottom:none; }
+  .inspector .insp-k { color:var(--faint); }
+  .inspector .insp-v { color:var(--ink); font-family:var(--mono); font-size:11px; text-align:right; }
+  .inspector .insp-verdict { margin-top:8px; padding:6px 8px; border-radius:6px; font-size:11.5px; }
+  .inspector .insp-verdict.engineer { background:rgba(122,198,123,.1); color:var(--ok); }
+  .inspector .insp-verdict.measure { background:rgba(224,164,92,.1); color:var(--gold); }
+  .inspector .insp-pin-hint { font-family:var(--mono); font-size:9.5px; color:var(--faint); margin-top:8px; }
+  @media (prefers-reduced-motion: reduce) {
+    .ebox .body, .levbar-med, .inhib-arc, .inhib-head, .selfloop, .resstrip-fill, .mech-layer { transition:none !important; }
+  }
 
   /* ── headline bottleneck banner ─────────────────────────────────────── */
   .headline { font-size:14px; line-height:1.5; }
@@ -151,36 +241,60 @@
 
   <!-- ── map + results ───────────────────────────────────────────────── -->
   <h2><span class="step">1</span>Pathway flux map</h2>
-  <p class="hint">Each arrow is one enzyme step; colour shows who runs it. Arrow thickness ∝ flux through that
-    step; circle size ∝ how much of that metabolite piles up. A fat circle with thin arrows leaving it = a
-    bottleneck (substrate accumulating because the next step can't keep up).</p>
+  <p class="hint">This is an instrument panel, not a circuit of pipes. <b>Boxes are enzymes — the bar on each is
+    its leverage</b> (boost it 1%, watch the end product move); wire thickness is flux; the small rings on the
+    wire are pools, not concentrations. Dashed arrows ending in <b>⊣</b> are inhibition. A box's border tells you
+    what's running it — hover or click any box for the full story.</p>
 
   <div class="maprow">
     <div>
-      <div class="mapwrap"><svg class="flux" id="map" viewBox="0 0 340 980" xmlns="http://www.w3.org/2000/svg">
-        <defs><marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.2" orient="auto">
-          <path d="M0,0 L6,3.2 L0,6.4 Z" fill="var(--muted)"/></marker></defs>
-        <g id="edges"></g><g id="elabels"></g><g id="nodes"></g>
+      <div class="mapwrap"><svg class="flux" id="map" viewBox="0 0 640 1200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.2" orient="auto">
+            <path d="M0,0 L6,3.2 L0,6.4 Z" fill="var(--muted)"/></marker>
+          <marker id="arrLeak" markerWidth="7" markerHeight="7" refX="6" refY="3.2" orient="auto">
+            <path d="M0,0 L6,3.2 L0,6.4 Z" fill="#5a4a3a"/></marker>
+          <pattern id="hatchGold" width="5" height="5" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <rect width="5" height="5" fill="var(--inputbg)"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--gold)" stroke-width="2.2"/>
+          </pattern>
+        </defs>
+        <g id="resstrip" class="mech-layer"></g>
+        <g id="leaks" class="mech-layer"></g>
+        <g id="edges"></g><g id="elabels"></g><g id="mchips"></g>
+        <g id="arcs" class="mech-layer"></g>
+        <g id="eboxes"></g>
       </svg></div>
+      <div class="maptoggles">
+        <label><input type="checkbox" id="tog_arcs" checked> feedback arcs</label>
+        <label><input type="checkbox" id="tog_leaks" checked> competition leaks</label>
+        <label><input type="checkbox" id="tog_res" checked> resource strip</label>
+      </div>
       <div class="legend">
-        <span><i style="background:var(--muted)"></i>endogenous (native)</span>
-        <span><i style="background:var(--cyan)"></i>endogenous (recombinant)</span>
-        <span><i style="background:var(--accent)"></i>heterologous</span>
-        <span><i style="background:var(--gold)"></i>fed</span>
-        <span><i style="background:#2c5256"></i>drain / off</span>
+        <span><i class="box" style="border-color:var(--muted)"></i>native</span>
+        <span><i class="box" style="border-color:var(--cyan)"></i>recombinant (escapes transcriptional fb)</span>
+        <span><i class="box" style="border-color:var(--accent)"></i>heterologous</span>
+        <span><i class="box" style="border-color:var(--ok)"></i>engineered variant (escapes product inhibition)</span>
+        <span><i class="ring"></i>metabolite pool (hedged)</span>
+        <span><i class="dash"></i>inhibits (⊣)</span>
+        <span><i style="background:#5a4a3a"></i>competing sink / leak</span>
+      </div>
+      <div class="panel inspector" id="inspector" style="margin-top:12px">
+        <div class="insp-empty">Hover an enzyme box for details · click to pin it open.</div>
       </div>
     </div>
 
     <div>
       <div class="panel">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <h2 style="margin:0">Where's the leverage? <span style="text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400">— boost which enzyme to make more <span id="prodName">β-carotene</span>?</span></h2>
+          <h2 style="margin:0">Full leverage ranking <span style="text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400">— boost which enzyme to make more <span id="prodName">β-carotene</span>?</span></h2>
           <button class="preset" id="runEnsemble">run sensitivity analysis</button>
         </div>
         <div class="bars" id="fccBars" style="margin-top:10px"></div>
-        <p class="hint">Bars show how much the end-product flux moves if you boost each enzyme 1% (a flux-control
-          coefficient) <b>at the midpoint parameter set</b>. Long green bar = high leverage, boost it. Red =
-          boosting it <i>hurts</i> (it's pulling flux into a side-branch). Near-zero = not limiting right now.</p>
+        <p class="hint">Same leverage numbers as the boxes on the map, listed in full. Bars show how much the
+          end-product flux moves if you boost each enzyme 1% (a flux-control coefficient) <b>at the midpoint
+          parameter set</b>. Long green bar = high leverage, boost it. Red = boosting it <i>hurts</i> (it's
+          pulling flux into a side-branch). Near-zero = not limiting right now. This is the number that defines
+          "bottleneck" here — not how big a metabolite's pool looks.</p>
         <div id="ensembleBox" style="display:none">
           <div class="sub-h" style="margin-top:14px">Sensitivity ensemble <span style="color:var(--faint);text-transform:none;letter-spacing:0">— FCC distribution over the plausible parameter ranges</span></div>
           <div class="bars" id="ensBars"></div>
@@ -195,7 +309,10 @@
 
       <div class="grid" style="margin-top:14px">
         <div class="panel">
-          <h2>Metabolite pools</h2>
+          <h2>Metabolite pools <span style="text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400">— secondary</span></h2>
+          <p class="hint" style="margin-top:0">Indicates whether flux is getting through, not a concentration or
+            titre — the dilution term that closes the steady state makes absolute pool size semi-arbitrary. Don't
+            call something a bottleneck because its pool looks big; use the leverage ranking above.</p>
           <div class="bars" id="poolBars"></div>
         </div>
         <div class="panel">
@@ -681,72 +798,372 @@ function resolveP(sampler){
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  FLUX MAP — clean vertical cascade, enzyme-labelled edges
+//  FLUX MAP v4 — enzymes are the primary objects; flux + leverage are the
+//  primary quantities; metabolites are demoted to hedged chips on the wire.
+//  See the pathway-UI work order: this section is presentation-only — it
+//  reads the model's existing outputs (rates(), pools, FCCs) and derives
+//  display quantities (inhibition fraction, flux share, bar heights) from
+//  them. It does not alter any rate law, solver, or ensemble computation.
 // ════════════════════════════════════════════════════════════════════════
-const NODES = {
-  acetyl:{x:170,y:34,lab:'acetyl-CoA',src:1},
-  HMG:{x:170,y:104,sp:0}, MEV:{x:170,y:174,sp:1},
-  IPP:{x:120,y:258,sp:2}, DMAPP:{x:240,y:258,sp:3},
-  isoprenol:{x:40,y:200,lab:'isoprenol',feedv:'isoprenol_in'}, prenol:{x:300,y:200,lab:'prenol',feedv:'prenol_in'},
-  GPP:{x:170,y:340,sp:4}, FPP:{x:170,y:418,sp:5},
-  squalene:{x:295,y:372,lab:'squalene',sink:1,grey:1}, dolichol:{x:300,y:418,lab:'dolichol',sink:1}, coq:{x:300,y:462,lab:'CoQ',sink:1},
-  GGPP:{x:170,y:520,sp:6}, ggpren:{x:300,y:520,lab:'GG-prenyl',sink:1},
-  phytoene:{x:170,y:606,sp:7}, lycopene:{x:170,y:686,sp:8},
-  bcarotene:{x:170,y:766,sp:9}, astaxanthin:{x:170,y:846,sp:10},
-};
-const EDGES = [
-  ['acetyl','HMG','thiolase',r=>r.thiolase], ['HMG','MEV','hmgr',r=>r.hmgr], ['MEV','IPP','mva_lower',r=>r.mva],
-  ['isoprenol','IPP','iup',r=>r.isoCK], ['prenol','DMAPP','iup',r=>r.prenolCK],
-  ['IPP','DMAPP','idi',r=>Math.abs(r.idi)],
-  ['DMAPP','GPP','fpps',r=>r.fpps1], ['GPP','FPP','fpps',r=>r.fpps2],
-  ['FPP','GGPP','ggpps_native',r=>r.ggn], ['FPP','GGPP','saggpps',r=>r.saF,{off:5}], ['DMAPP','GGPP','saggpps',r=>r.saD,{dash:1,off:-7}],
-  ['FPP','squalene','sink',r=>r.squal], ['FPP','dolichol','sink',r=>r.dol], ['FPP','coq','sink',r=>r.coq],
-  ['GGPP','ggpren','sink',r=>r.ggpren],
-  ['GGPP','phytoene','carrp',r=>r.psy], ['phytoene','lycopene','carb',r=>r.carb],
-  ['lycopene','bcarotene','carrp',r=>r.lcy], ['bcarotene','astaxanthin','crtwz',r=>r.astax],
-];
 const SVGNS='http://www.w3.org/2000/svg';
 function svgEl(t,a,txt){ const e=document.createElementNS(SVGNS,t); for(const k in a) e.setAttribute(k,a[k]); if(txt!=null) e.textContent=txt; return e; }
 
+// metabolite / feed / sink chips — small, hedged, never the hero number
+const CHIPS = {
+  acetyl:{x:330,y:40,lab:'acetyl-CoA',src:1},
+  HMG:{x:330,y:140,sp:0}, MEV:{x:330,y:240,sp:1},
+  isoprenol:{x:70,y:283,lab:'isoprenol',feedv:'isoprenol_in'}, prenol:{x:70,y:415,lab:'prenol',feedv:'prenol_in'},
+  IPP:{x:270,y:340,sp:2}, DMAPP:{x:390,y:340,sp:3},
+  GPP:{x:330,y:470,sp:4}, FPP:{x:330,y:560,sp:5},
+  squalene:{x:560,y:520,lab:'squalene',sink:1,grey:1}, dolichol:{x:560,y:568,lab:'dolichol',sink:1}, coq:{x:560,y:616,lab:'CoQ',sink:1},
+  GGPP:{x:330,y:672,sp:6}, ggpren:{x:560,y:672,lab:'GG-prenyl',sink:1},
+  phytoene:{x:330,y:790,sp:7}, lycopene:{x:330,y:895,sp:8},
+  bcarotene:{x:330,y:1000,sp:9}, astaxanthin:{x:330,y:1105,sp:10},
+};
+// enzyme boxes — the controllable, inspectable units. Off-trunk boxes get an
+// explicit center; 'carrp' appears twice (it's bifunctional: PSY + cyclase).
+const BOXCTR = {iup:{x:105,y:349}, ggpps_native:{x:215,y:620}, saggpps:{x:440,y:620}};
+const BOXES = [
+  {id:'thiolase', x:245,y:70,  w:170,h:40},
+  {id:'hmgr',     x:255,y:171, w:150,h:38},
+  {id:'mva_lower',x:240,y:269, w:180,h:44},
+  {id:'idi',      x:295,y:323, w:70, h:26},
+  {id:'fpps',     x:245,y:386, w:170,h:40},
+  {id:'iup', label:'IUP module (CK → IPK)', x:30, y:305, w:150,h:88, isIUP:true},
+  {id:'ggpps_native', x:150,y:602, w:130,h:36},
+  {id:'saggpps',  x:365,y:596, w:150,h:48},
+  {id:'carrp', reaction:'psy', key:'carrp_psy', label:'Phytoene synthase (CarRP)', rxn:'2 GGPP → phytoene', x:230,y:720,w:200,h:42},
+  {id:'carb',     x:245,y:830, w:170,h:40, badge:'4 steps lumped'},
+  {id:'carrp', reaction:'lcy', key:'carrp_lcy', label:'Lycopene cyclase (CarRP)', rxn:'lycopene → β-carotene', x:230,y:930,w:200,h:44},
+  {id:'crtwz',    x:245,y:1042,w:170,h:40, badge:'lipid-droplet partition'},
+];
+function boxCX(b){ return b.x+b.w/2; } function boxCY(b){ return b.y+b.h/2; }
+function getPoint(key){ if(CHIPS[key]) return {x:CHIPS[key].x,y:CHIPS[key].y}; if(BOXCTR[key]) return BOXCTR[key]; return {x:330,y:330}; }
+
+// mass-flow edges. `via` bends the line through an off-trunk box; `and` flags
+// an AND-junction (stoichiometric requirement); `leak` routes to the leaks layer.
+const EDGES = [
+  ['acetyl','HMG','thiolase',   r=>r.thiolase, {via:[330,90]}],
+  ['HMG','MEV','hmgr',         r=>r.hmgr,     {via:[330,190]}],
+  ['MEV','IPP','mva_lower',    r=>r.mva,      {via:[330,291]}],
+  ['isoprenol','iup','ck',     r=>r.isoCK,    {}],
+  ['prenol','iup','ck',        r=>r.prenolCK, {}],
+  ['iup','IPP','ipk',          r=>r.isoCK,    {}],
+  ['iup','DMAPP','ipk',        r=>r.prenolCK, {}],
+  ['IPP','GPP','fpps',         r=>r.fpps1,    {via:[330,406]}],
+  ['DMAPP','GPP','fpps',       r=>r.fpps1,    {via:[330,406]}],
+  ['GPP','FPP','fpps',         r=>r.fpps2,    {labelOnly:1}],
+  ['FPP','GGPP','ggpps_native',r=>r.ggn,      {via:[215,620]}],
+  ['FPP','GGPP','saggpps',     r=>r.saF,      {via:[440,620]}],
+  ['DMAPP','GGPP','saggpps',   r=>r.saD,      {via:[440,620], and:'1 DMAPP + 3 IPP', andAt:[478,584], badge:'runs only when IPP is in genuine excess'}],
+  ['FPP','squalene','sink',    r=>r.squal,    {leak:1}],
+  ['FPP','dolichol','sink',    r=>r.dol,      {leak:1}],
+  ['FPP','coq','sink',         r=>r.coq,      {leak:1}],
+  ['GGPP','ggpren','sink',     r=>r.ggpren,   {leak:1}],
+  ['GGPP','phytoene','carrp',  r=>r.psy,      {via:[330,741], and:'2× GGPP', andAt:[330,706]}],
+  ['phytoene','lycopene','carb',r=>r.carb,    {via:[330,850]}],
+  ['lycopene','bcarotene','carrp',r=>r.lcy,   {via:[330,952]}],
+  ['bcarotene','astaxanthin','crtwz',r=>r.astax,{via:[330,1062]}],
+];
 function edgeClass(enzId){
   if(enzId==='sink') return 'sink';
-  if(enzId==='iup')  return iupActive()?'hetero':'off';
+  if(enzId==='ck'||enzId==='ipk') return iupActive()?'hetero':'off';
   const def=ENZ[enzId];
   if(def.kind==='hetero') return inAnyCas(enzId)?'hetero':'off';
   return inAnyCas(enzId)?'recomb':'endo';
 }
-function drawMap(x, r, P){
-  const eg=document.getElementById('edges'), lg=document.getElementById('elabels'), ng=document.getElementById('nodes');
-  eg.innerHTML=''; lg.innerHTML=''; ng.innerHTML='';
-  const fl=EDGES.map(e=>e[3](r)), maxF=Math.max(1e-6,...fl), maxPool=Math.max(1e-6,...x);
+
+// ── presentation-only derived quantities (display math, not model math) ──
+function mvkInhibitionTerms(x,P){
+  const [,,,,GPP,FPP,GGPP]=x, K=P.K;
+  return { GPP:GPP/K.ki_GPP, FPP:FPP/K.ki_FPP, GGPP:GGPP/K.ki_GGPP };
+}
+function fluxShare(edgeIds, r){
+  // fraction of a branch point's total outflow each named rate represents (for leak widths)
+  const vals=edgeIds.map(k=>Math.max(0,r[k]||0)), tot=vals.reduce((s,v)=>s+v,0)||1e-9;
+  return vals.map(v=>v/tot);
+}
+
+// confidence tier for each enzyme's parameters (high=insect-direct, med=proxy,
+// mech=mechanism evidenced/value unmeasured, gap=no data) — read from PARAM/notes above.
+const ENZ_CONF = { thiolase:'gap', hmgr:'gap', mva_lower:'high', idi:'med', fpps:'gap',
+  ggpps_native:'gap', ck:'med', ipk:'med', saggpps:'gap', carrp:'mech', carb:'med', crtwz:'gap' };
+// which variant, if selected, counts as "escapes active-site product inhibition"
+const VARIANT_ENGINEERED = { mva_lower:'FBR', carrp:'Y27R' };
+// current-flux keys (summed) and kinetic-parameter keys shown per enzyme in the inspector
+const ENZ_FLUX_KEYS = { thiolase:['thiolase'], hmgr:['hmgr'], mva_lower:['mva'], idi:['idi'],
+  fpps:['fpps1','fpps2'], ggpps_native:['ggn'], saggpps:['saF','saD'], carrp:['psy','lcy'],
+  carb:['carb'], crtwz:['astax'], ck:['isoCK','prenolCK'], ipk:['isoCK','prenolCK'] };
+const ENZ_PARAMS = { mva_lower:['mvk_Km_ATP','mvk_Km_mev','mvk_Ki_FPP','mvk_Ki_GPP','mvk_Ki_GGPP','mvk_Ki_C5'],
+  idi:['idi_Keq_ins','idi_Keq_mic'], ck:['ck_Km','ck_kcat'], ipk:['pmk_Km'], carrp:['lcy_Ki'],
+  saggpps:['saggpps_Km'], thiolase:['trunk'], hmgr:['trunk'], carb:['trunk'] };
+
+function provClass(id){
+  const e=ENZ[id], s=STATE.enzymes[id], eng=VARIANT_ENGINEERED[id];
+  if(e.kind==='hetero') return inAnyCas(id)?'hetero':'notbuilt';
+  if(eng && s.variant===eng) return 'engineered';
+  return inAnyCas(id)?'recomb':'native';
+}
+function iupProvClass(){ return iupActive()?'hetero':'notbuilt'; }
+
+let lastLev=null, lastEnsembleStats=null, lastR=null, lastX_MAP=null, lastP=null, pinnedId=null, hoverId=null;
+
+function levLookup(id){ if(!lastLev) return 0; const f=lastLev.out.find(o=>o[0]===id); return f?f[1]:0; }
+function ensLookup(id){ if(!lastEnsembleStats) return null; return lastEnsembleStats.find(s=>s.id===id)||null; }
+
+function drawLevBar(g, x, y, h, val, ens, active){
+  // vertical edge-bar: solid magnitude ramp by default; once the ensemble has run,
+  // solid/hot = "engineer next" (robust), hatched = "measure first" (rank unstable).
+  const track=svgEl('rect',{x:x-4,y:y,width:4,height:h,rx:1.5,class:'levbar-track'}); g.appendChild(track);
+  if(!active){ return; }
+  const maxAbs=Math.max(0.3, Math.abs(val), ens?Math.max(Math.abs(ens.lo),Math.abs(ens.hi)):0);
+  const cls = ens ? ens.cls : (val<0?'negative':(Math.abs(val)>0.15?'engineer':'minor'));
+  const wrap=svgEl('g',{class:'levbar '+cls});
+  if(ens){
+    const hLo=Math.min(h,h*Math.abs(ens.lo)/maxAbs), hHi=Math.min(h,h*Math.abs(ens.hi)/maxAbs);
+    const rH=Math.max(hLo,hHi);
+    wrap.appendChild(svgEl('rect',{x:x-4,y:y+h-rH,width:4,height:rH,rx:1.5,class:'levbar-range',fill:'var(--faint)'}));
+  }
+  const barH=Math.max(2,Math.min(h,h*Math.abs(val)/maxAbs));
+  wrap.appendChild(svgEl('rect',{x:x-4,y:y+h-barH,width:4,height:barH,rx:1.5,class:'levbar-med'}));
+  g.appendChild(wrap);
+}
+function drawConfDot(g,x,y,tier){
+  g.appendChild(svgEl('circle',{cx:x,cy:y,r:3,class:'conf-dot '+tier}));
+}
+
+function drawBox(container, b, r, x, P){
+  const key=b.key||b.id, def=ENZ[b.id]||null, isIUP=b.isIUP;
+  const cx=boxCX(b), cy=boxCY(b);
+  const cls = isIUP ? iupProvClass() : provClass(b.id);
+  const g=svgEl('g',{class:'ebox '+cls, 'data-eid':key});
+  g.appendChild(svgEl('rect',{x:b.x,y:b.y,width:b.w,height:b.h,class:'body'}));
+  const name = b.label || (def?def.name:key);
+  g.appendChild(svgEl('text',{x:cx,y:b.y+15,class:'ename','text-anchor':'middle'}, name));
+  const rxn = b.rxn || (def?def.rxn:'');
+  if(rxn) g.appendChild(svgEl('text',{x:cx,y:b.y+27,class:'egene','text-anchor':'middle'}, rxn));
+  if(b.badge) g.appendChild(svgEl('text',{x:cx,y:b.y+b.h-4,class:'ebadge','text-anchor':'middle'}, b.badge));
+  if(!isIUP){
+    const conf=ENZ_CONF[b.id]; if(conf) drawConfDot(g, b.x+b.w-8, b.y+8, conf);
+    const val=levLookup(b.id), ens=ensLookup(b.id);
+    drawLevBar(g, b.x, b.y+4, b.h-8, val, ens, true);
+  } else {
+    // combined IUP box: two mini leverage bars (CK, IPK) — the "needs both" AND-gate.
+    // Everything for this box stays inside its own rect so it can't collide with the
+    // isoprenol/prenol chips sitting just above/below it.
+    const ckOn=inAnyCas('ck'), ipkOn=inAnyCas('ipk'), barY=b.y+28, barH=b.h-56;
+    drawLevBar(g, b.x+26, barY, barH, levLookup('ck'), ensLookup('ck'), ckOn);
+    drawLevBar(g, b.x+b.w-16, barY, barH, levLookup('ipk'), ensLookup('ipk'), ipkOn);
+    g.appendChild(svgEl('text',{x:b.x+22,y:b.y+b.h-24,class:'ebadge','text-anchor':'middle'},'CK'));
+    g.appendChild(svgEl('text',{x:b.x+b.w-20,y:b.y+b.h-24,class:'ebadge','text-anchor':'middle'},'IPK'));
+    // full cost/cofactor detail lives in the hover inspector; keep the box itself terse
+    g.appendChild(svgEl('text',{x:cx,y:b.y+b.h-8,class:'ebadge','text-anchor':'middle'},'2 ATP / C5'));
+  }
+  container.appendChild(g);
+}
+
+function drawChip(container, key, x, maxPool, P){
+  const nd=CHIPS[key]; let stroke='var(--cyan)', extra=null, cls='mchip';
+  const g=svgEl('g',{class:cls});
+  if(nd.sp!=null){
+    const p=x[nd.sp];
+    const tickH=Math.max(2,Math.min(14,14*Math.sqrt(p/maxPool)));
+    g.appendChild(svgEl('circle',{cx:nd.x,cy:nd.y,r:6,class:'mchip-ring'}));
+    g.appendChild(svgEl('line',{x1:nd.x,y1:nd.y+5,x2:nd.x,y2:nd.y+5-tickH,class:'mchip-tick'}));
+    const t=svgEl('title',{},`${SP[nd.sp]}: flux getting through ≈ ${p.toFixed(2)} rel. — not a concentration`); g.appendChild(t);
+  } else if(nd.feedv!=null){
+    const v=+STATE[nd.feedv];
+    g.setAttribute('class','mchip mchip-feed');
+    g.appendChild(svgEl('circle',{cx:nd.x,cy:nd.y,r:7+4*Math.sqrt(v/20)}));
+    g.appendChild(svgEl('title',{},`${nd.lab} fed: ${v.toFixed(1)} rel.`));
+  } else if(nd.sink){
+    g.setAttribute('class','mchip mchip-sink');
+    g.appendChild(svgEl('circle',{cx:nd.x,cy:nd.y,r:7}));
+    g.appendChild(svgEl('title',{},`${nd.lab} — competing sink, flux lost here`));
+  } else if(nd.src){
+    g.appendChild(svgEl('circle',{cx:nd.x,cy:nd.y,r:8,class:'mchip-ring',stroke:'var(--muted)'}));
+  }
+  container.appendChild(g);
+  // feed chips (isoprenol/prenol) sit right next to their edge into the IUP box — label to
+  // the side, not above, so the label never sits under the line leaving the chip.
+  const lp = nd.feedv!=null ? {x:nd.x-11,y:nd.y+3,anchor:'end'} : {x:nd.x,y:nd.y-11,anchor:'middle'};
+  container.appendChild(svgEl('text',{x:lp.x,y:lp.y,class:'mchip-lab','text-anchor':lp.anchor}, nd.lab||SP[nd.sp]));
+}
+
+function drawMap(x, r, P, lev){
+  lastR=r; lastX_MAP=x; lastP=P; lastLev=lev;
+  const eg=document.getElementById('edges'), lg=document.getElementById('elabels'),
+        mg=document.getElementById('mchips'), bg=document.getElementById('eboxes'),
+        ag=document.getElementById('arcs'), kg=document.getElementById('leaks'),
+        sg=document.getElementById('resstrip');
+  eg.innerHTML=''; lg.innerHTML=''; mg.innerHTML=''; bg.innerHTML=''; ag.innerHTML=''; kg.innerHTML=''; sg.innerHTML='';
+  const fl=EDGES.map(e=>e[3](r)), maxF=Math.max(1e-6,...fl.map(Math.abs)), maxPool=Math.max(1e-6,...x);
+
+  // ── mass-flow + leak edges ──────────────────────────────────────────
   EDGES.forEach((e,i)=>{
-    const a=NODES[e[0]], b=NODES[e[1]], opt=e[4]||{}, f=fl[i];
+    const [fromKey,toKey,enzId,,opt0]=e, opt=opt0||{}, f=Math.abs(fl[i]);
+    const p0=getPoint(fromKey), p1=getPoint(toKey), via=opt.via?{x:opt.via[0],y:opt.via[1]}:null;
     const w=f>1e-9?1+5*Math.sqrt(f/maxF):0.7;
-    let cls='edge '+edgeClass(e[2])+(opt.dash?' dash':'');
-    if(P.squalene_on===false && e[1]==='squalene') cls='edge off';
-    const ln=svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:cls,'stroke-width':w.toFixed(2),'marker-end':'url(#arr)'});
-    const nm = e[2]==='iup' ? 'IUP (CK+IPK)' : (ENZ[e[2]]?ENZ[e[2]].name:e[2]);
+    let cls=(opt.leak?'leak':'edge '+edgeClass(enzId));
+    if(P.squalene_on===false && toKey==='squalene') cls='leak off';
+    const pts = via ? `${p0.x},${p0.y} ${via.x},${via.y} ${p1.x},${p1.y}` : `${p0.x},${p0.y} ${p1.x},${p1.y}`;
+    const marker = opt.leak?'url(#arrLeak)':'url(#arr)';
+    const ln=svgEl('polyline',{points:pts,class:cls,'stroke-width':w.toFixed(2),'marker-end':marker});
+    const nm = (enzId==='ck'||enzId==='ipk') ? 'IUP (CK → IPK)' : (ENZ[enzId]?ENZ[enzId].name:enzId);
     ln.appendChild(svgEl('title',{}, `${nm}: flux ${f.toFixed(3)}`));
-    eg.appendChild(ln);
-    const short = e[2]==='iup' ? 'IUP' : (ENZ[e[2]]?ENZ[e[2]].name.split(' ')[0]:null);
-    if(e[2]!=='sink' && short){
-      const mx=(a.x+b.x)/2+(opt.off||0), my=(a.y+b.y)/2;
-      lg.appendChild(svgEl('text',{x:mx+5,y:my+3,class:'edge-lab'}, short));
+    (opt.leak?kg:eg).appendChild(ln);
+    if(opt.leak){
+      kg.appendChild(svgEl('text',{x:(p0.x+p1.x)/2+6,y:(p0.y+p1.y)/2,class:'leak-lab'}, f>0.03?f.toFixed(2):''));
+    }
+    if(opt.and){
+      const at=opt.andAt?{x:opt.andAt[0],y:opt.andAt[1]}:via;
+      const jg=svgEl('g',{class:'and-glyph'});
+      jg.appendChild(svgEl('circle',{cx:at.x,cy:at.y,r:9}));
+      jg.appendChild(svgEl('text',{x:at.x,y:at.y+2.5,'text-anchor':'middle'},'&'));
+      jg.appendChild(svgEl('title',{}, `Requires both: ${opt.and}${opt.badge?' — '+opt.badge:''}`));
+      eg.appendChild(jg);
+      eg.appendChild(svgEl('text',{x:at.x,y:at.y-12,class:'edge-lab','text-anchor':'middle'}, opt.and));
     }
   });
-  for(const id in NODES){
-    const nd=NODES[id]; let rad=12, fill='var(--inputbg)', stroke='var(--cyan)', val='', lab=nd.lab;
-    if(nd.sp!=null){ const p=x[nd.sp]; rad=9+12*Math.sqrt(p/maxPool); val=p.toFixed(2); lab=SP[nd.sp]; }
-    else if(nd.feedv!=null){ const v=+STATE[nd.feedv]; rad=9+6*Math.sqrt(v/20); val=v.toFixed(1); stroke='var(--gold)'; }
-    else if(nd.sink){ rad=10; stroke=(nd.grey&&!P.squalene_on)?'#244549':'var(--faint)'; fill='var(--field)'; }
-    else if(nd.src){ rad=12; stroke='var(--muted)'; fill='var(--field)'; }
-    const g=svgEl('g',{});
-    const c=svgEl('circle',{cx:nd.x,cy:nd.y,r:rad.toFixed(1),fill,stroke,'stroke-width':1.4});
-    c.appendChild(svgEl('title',{}, lab+(val?`: pool ${val}`:''))); g.appendChild(c);
-    g.appendChild(svgEl('text',{x:nd.x,y:nd.y-rad-3,class:'node-lab','text-anchor':'middle'}, lab));
-    if(val) g.appendChild(svgEl('text',{x:nd.x,y:nd.y+3,class:'node-val','text-anchor':'middle'}, val));
-    ng.appendChild(g);
+
+  // ── metabolite / feed / sink chips ──────────────────────────────────
+  Object.keys(CHIPS).forEach(k=>drawChip(mg,k,x,maxPool,P));
+
+  // ── enzyme boxes ─────────────────────────────────────────────────────
+  BOXES.forEach(b=>drawBox(bg,b,r,x,P));
+
+  // ── MVK product-inhibition arcs (dashed, ⊣ head, opacity ∝ inhibition) ──
+  const mvkFBR = STATE.enzymes.mva_lower.variant==='FBR';
+  const terms = mvkInhibitionTerms(x,P);
+  const mvkBox = BOXES.find(b=>b.id==='mva_lower');
+  const ARCS = [
+    {from:'GPP',  term:terms.GPP,  ctrl:[560,430,560,315], toY:281},
+    {from:'FPP',  term:terms.FPP,  ctrl:[600,500,600,300], toY:293},
+    {from:'GGPP', term:terms.GGPP, ctrl:[615,610,615,290], toY:305},
+  ];
+  ARCS.forEach(a=>{
+    const p0=getPoint(a.from), tx=mvkBox.x+mvkBox.w;
+    const d=`M${p0.x},${p0.y} C${a.ctrl[0]},${a.ctrl[1]} ${a.ctrl[2]},${a.ctrl[3]} ${tx+14},${a.toY}`;
+    const frac = mvkFBR ? 0 : Math.min(1, a.term/(1+a.term));
+    const opacity = mvkFBR ? 0.12 : (0.15+0.75*frac);
+    const relCls = mvkFBR ? ' released' : '';
+    const path=svgEl('path',{d,class:'inhib-arc'+relCls,style:`opacity:${opacity.toFixed(2)}`});
+    path.appendChild(svgEl('title',{}, mvkFBR
+      ? `${a.from} would inhibit MVK, but this variant is feedback-resistant (FBR) — inhibition escaped.`
+      : `${a.from} inhibits MVK at its ATP site (competitive, insect-direct Ki). Currently contributing ${(frac*100).toFixed(0)}% toward saturation.`));
+    ag.appendChild(path);
+    const head=svgEl('line',{x1:tx+14,y1:a.toY-6,x2:tx+14,y2:a.toY+6,class:'inhib-head'+relCls,style:`opacity:${opacity.toFixed(2)}`});
+    ag.appendChild(head);
+  });
+  ag.appendChild(svgEl('text',{x:mvkBox.x+mvkBox.w+18,y:270,class:'inhib-lab'},'⊣ MVK'));
+
+  // ── cyclase substrate-inhibition self-loop ──────────────────────────
+  const cycBox = BOXES.find(b=>b.id==='carrp'&&b.reaction==='lcy');
+  const lyc = getPoint('lycopene'), wtCyc = STATE.enzymes.carrp.variant==='WT';
+  const loopD=`M${lyc.x-6},${lyc.y+4} C${lyc.x-110},${lyc.y+10} ${cycBox.x-70},${cycBox.y+22} ${cycBox.x-2},${cycBox.y+22}`;
+  const loop=svgEl('path',{d:loopD,class:'selfloop'+(wtCyc?'':' off')});
+  loop.appendChild(svgEl('title',{}, wtCyc
+    ? 'WT lycopene cyclase is substrate-inhibited by its own product (lycopene) — biphasic, chokes as lycopene builds up.'
+    : 'Y27R abolishes the substrate inhibition — no self-throttling as lycopene rises.'));
+  ag.appendChild(loop);
+  ag.appendChild(svgEl('line',{x1:cycBox.x-8,y1:cycBox.y+16,x2:cycBox.x-8,y2:cycBox.y+28,class:'selfloop'+(wtCyc?'':' off')}));
+
+  // ── shared-resource strip ────────────────────────────────────────────
+  const gauges=[['acetyl-CoA avail', r.acoaAvail, false],['NADPH avail', r.nadphAvail, false],
+    ['ATP headroom', Math.min(1,P.atp_headroom/6), false]];
+  sg.appendChild(svgEl('text',{x:440,y:14,class:'resstrip-lab',style:'font-weight:600'},'shared pools'));
+  gauges.forEach((gu,i)=>{
+    const y=26+i*22;
+    sg.appendChild(svgEl('text',{x:440,y:y-3,class:'resstrip-lab'}, gu[0]));
+    sg.appendChild(svgEl('rect',{x:440,y:y,width:170,height:7,rx:3,class:'resstrip-track'}));
+    sg.appendChild(svgEl('rect',{x:440,y:y,width:(170*Math.max(0,Math.min(1,gu[1]))).toFixed(1),height:7,rx:3,
+      class:'resstrip-fill'+(gu[1]<0.4?' warn':'')}));
+  });
+  sg.appendChild(svgEl('text',{x:440,y:100,class:'resstrip-lab',style:'fill:var(--faint)'},'MVA entry draws acetyl-CoA + NADPH.'));
+  sg.appendChild(svgEl('text',{x:440,y:112,class:'resstrip-lab',style:'fill:var(--faint)'},'FAS competes for both; IUP: ATP only.'));
+
+  applyMechToggles();
+}
+
+function applyMechToggles(){
+  const setLayer=(id,on)=>{ const el=document.getElementById(id); if(el) el.classList.toggle('hidden', !on); };
+  setLayer('arcs', document.getElementById('tog_arcs').checked);
+  setLayer('leaks', document.getElementById('tog_leaks').checked);
+  setLayer('resstrip', document.getElementById('tog_res').checked);
+}
+['tog_arcs','tog_leaks','tog_res'].forEach(id=>{
+  const el=document.getElementById(id); if(el) el.addEventListener('change', applyMechToggles);
+});
+
+// ── enzyme inspector: hover reveals, click pins ─────────────────────────
+document.getElementById('map').addEventListener('mousemove', e=>{
+  const g=e.target.closest('[data-eid]'); const id=g?g.dataset.eid:null;
+  if(id!==hoverId){ hoverId=id; if(!pinnedId) renderInspector(id); }
+});
+document.getElementById('map').addEventListener('mouseleave', ()=>{ hoverId=null; if(!pinnedId) renderInspector(null); });
+document.getElementById('map').addEventListener('click', e=>{
+  const g=e.target.closest('[data-eid]'); const id=g?g.dataset.eid:null;
+  pinnedId = (id && pinnedId===id) ? null : id;
+  renderInspector(pinnedId||hoverId);
+  document.querySelectorAll('.ebox').forEach(b=>b.classList.toggle('pinned', pinnedId && b.dataset.eid===pinnedId));
+});
+function boxMeta(key){
+  return BOXES.find(b=>(b.key||b.id)===key) || (key==='iup'?{id:'iup',isIUP:true,key:'iup'}:null);
+}
+function renderInspector(key){
+  const box=document.getElementById('inspector');
+  if(!key){ box.innerHTML='<div class="insp-empty">Hover an enzyme box for details · click to pin it open.</div>'; return; }
+  const meta=boxMeta(key);
+  if(!meta){ box.innerHTML='<div class="insp-empty">—</div>'; return; }
+  if(meta.isIUP){
+    const ckOn=inAnyCas('ck'), ipkOn=inAnyCas('ipk');
+    box.innerHTML = `<h3>IUP module <span class="pill">${iupActive()?'built':'not built'}</span></h3>
+      <div class="insp-rxn">choline kinase (CK) → isopentenyl-phosphate kinase (IPK): prenol/isoprenol → mono-P → IPP/DMAPP</div>
+      <div class="insp-row"><span class="insp-k">CK in construct</span><span class="insp-v">${ckOn?'yes':'no'}</span></div>
+      <div class="insp-row"><span class="insp-k">IPK in construct</span><span class="insp-v">${ipkOn?'yes':'no'}</span></div>
+      <div class="insp-row"><span class="insp-k">Cost</span><span class="insp-v">2 ATP / C5, 0 acetyl-CoA, 0 NADPH</span></div>
+      <div class="insp-row"><span class="insp-k">ATP headroom factor</span><span class="insp-v">${lastR?lastR.atpFactor.toFixed(2):'—'}</span></div>
+      <p class="hint" style="margin:8px 0 0">Requires <b>both</b> enzymes — BSF has no native route from fed isopentenols into the pathway.</p>`;
+    return;
   }
+  const id=meta.id, def=ENZ[id], s=STATE.enzymes[id];
+  const fkeys=ENZ_FLUX_KEYS[id]||[], flux=lastR?fkeys.reduce((sum,k)=>sum+Math.abs(lastR[k]||0),0):0;
+  const val=levLookup(id), ens=ensLookup(id);
+  const conf=ENZ_CONF[id], confLab={high:'insect-direct',med:'proxy',mech:'mechanism evidenced, value unmeasured',gap:'no data — placeholder'}[conf]||'';
+  const prov=provClass(id);
+  const provLab={native:'native only',recomb:'native + recombinant (escapes transcriptional feedback)',
+    hetero:'in construct',engineered:'engineered variant (escapes active-site product inhibition)',notbuilt:'not added'}[prov];
+  let regRow='';
+  if(id==='mva_lower'){
+    const mvkFBR=s.variant==='FBR', terms=lastX_MAP&&lastP?mvkInhibitionTerms(lastX_MAP,lastP):{GPP:0,FPP:0,GGPP:0};
+    const inh = 1/(1+terms.GPP+terms.FPP+terms.GGPP);
+    regRow=`<div class="insp-row"><span class="insp-k">Active-site inhibition</span><span class="insp-v">${mvkFBR?'escaped (FBR)':`running at ${(inh*100).toFixed(0)}%`}</span></div>`;
+  }
+  if(id==='carrp'){
+    const wt=s.variant==='WT';
+    regRow+=`<div class="insp-row"><span class="insp-k">Cyclase substrate inhibition</span><span class="insp-v">${wt?'active (WT)':'escaped (Y27R)'}</span></div>`;
+  }
+  const paramRows=(ENZ_PARAMS[id]||[]).map(k=>{ const p=PARAM[k]; if(!p) return '';
+    return `<div class="insp-row"><span class="insp-k">${k}</span><span class="insp-v">${p.disp}${p.unit&&p.unit!=='—'?' '+p.unit:''} <span class="conf ${p.conf}">${p.conf}</span></span></div>`; }).join('');
+  let verdict='';
+  if(ens){
+    verdict = ens.cls==='engineer'
+      ? `<div class="insp-verdict engineer"><b>Engineer next</b> — robustly top-ranked across the sampled parameter ranges.</div>`
+      : ens.cls==='measure'
+      ? `<div class="insp-verdict measure"><b>Measure first</b> — its rank flips across the plausible ranges; a real measurement here would most reduce which-step-to-engineer uncertainty.</div>`
+      : '';
+  }
+  box.innerHTML = `<h3>${meta.label||def.name} <span class="conf ${conf}" title="${confLab}">${conf}</span></h3>
+    <div class="insp-rxn">${meta.rxn||def.rxn}${def.cost?' · '+def.cost:''}</div>
+    <div class="insp-row"><span class="insp-k">Provenance</span><span class="insp-v">${provLab}</span></div>
+    <div class="insp-row"><span class="insp-k">Current flux</span><span class="insp-v">${flux.toFixed(3)} rel.</span></div>
+    <div class="insp-row"><span class="insp-k">Leverage (FCC, midpoint)</span><span class="insp-v">${val.toFixed(3)}</span></div>
+    ${ens?`<div class="insp-row"><span class="insp-k">Ensemble median [10–90%]</span><span class="insp-v">${ens.med.toFixed(2)} [${ens.lo.toFixed(2)}, ${ens.hi.toFixed(2)}]</span></div>`:''}
+    ${regRow}
+    ${paramRows}
+    <p class="hint" style="margin:8px 0 0">${(def.note||'').split('. ')[0]}.</p>
+    ${verdict}
+    <div class="insp-pin-hint">${pinnedId===key?'pinned — click the box again to unpin':'click the box to pin this open'}</div>`;
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -803,10 +1220,13 @@ function recompute(){
   // can trap Newton on the stale branch. One cold solve is cheap; we still cache the result in
   // lastX so the ensemble (small perturbations, single branch) can warm-start from it.
   const P=resolveP(); const ss=solveSS(P,null); lastX=ss.x; const {x,r}=ss;
-  drawMap(x,r,P);
   const prod=astaxOn()?'astaxanthin':'β-carotene';
   document.getElementById('prodName').textContent=prod;
   const lev=leverage(P,ss);
+  lastEnsembleStats=null;   // stale once inputs change — boxes fall back to single-point color
+  drawMap(x,r,P,lev);
+  if(pinnedId||hoverId) renderInspector(pinnedId||hoverId);
+  if(pinnedId){ const el=document.querySelector(`[data-eid="${pinnedId}"]`); if(el) el.classList.add('pinned'); }
   const maxA=Math.max(1e-6,...lev.out.map(o=>Math.abs(o[1])));
   document.getElementById('fccBars').innerHTML = lev.out.length
     ? lev.out.map(o=>barRow(ENZ[o[0]].name, o[1], o[1]/maxA, true)).join('')
@@ -857,7 +1277,12 @@ function renderEnsemble(res){
 }
 document.getElementById('runEnsemble').addEventListener('click',()=>{
   const btn=document.getElementById('runEnsemble'), t=btn.textContent; btn.textContent='running…'; btn.disabled=true;
-  setTimeout(()=>{ try{ renderEnsemble(runEnsemble(240)); } finally { btn.textContent=t; btn.disabled=false; } }, 20);
+  setTimeout(()=>{ try{
+    const res=runEnsemble(240); renderEnsemble(res);
+    lastEnsembleStats=res.stats;
+    if(lastX_MAP&&lastR&&lastP&&lastLev) drawMap(lastX_MAP,lastR,lastP,lastLev);   // refresh box leverage indicators (engineer/measure)
+    if(pinnedId||hoverId) renderInspector(pinnedId||hoverId);
+  } finally { btn.textContent=t; btn.disabled=false; } }, 20);
 });
 
 // ════════════════════════════════════════════════════════════════════════

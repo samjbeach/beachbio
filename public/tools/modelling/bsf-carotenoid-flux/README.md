@@ -8,6 +8,25 @@ dependencies (the upstream brief's React/Vite stack was adapted to the BeachBio
 no-framework tool convention). The full write-up also lives folded at the bottom of the
 tool page itself.
 
+## The pathway view (v4 — presentation only, no model changes)
+
+The map was rebuilt around a single reframe: **enzymes are the primary objects,
+flux + leverage (flux-control coefficient) are the primary quantities, and
+metabolite pools are demoted to small hedged chips on the wire.** Enzyme boxes
+carry a leverage bar (solid green once the ensemble calls it "engineer next",
+hatched gold when "measure first"), a provenance border (native / recombinant /
+heterologous / engineered-variant), and a confidence dot. MVK's product
+inhibition is drawn as dashed ⊣ arcs from GPP/FPP/GGPP that grey out when the
+variant is switched to FBR; the cyclase's substrate inhibition is a self-loop
+that fades out under Y27R; SaGGPPs' DMAPP-direct route and phytoene synthase's
+2×GGPP requirement are drawn as AND-junctions; competing sinks (squalene,
+dolichol, CoQ, GG-prenyl) are drawn as flux-proportional leaks. Hover or click
+any box for a full inspector (kinetics, source/confidence, current flux, FCC,
+active regulation, ensemble verdict). This view is desktop-first by design —
+it's an instrument panel meant to be read on a real monitor with a mouse, not
+optimized for a phone. Everything above reads the model's existing outputs; it
+does not touch any rate law, the solver, or the ensemble sampler.
+
 ## The model (v3)
 
 - **Endogenous vs heterologous** enzymes are first-class and visually distinct. The
