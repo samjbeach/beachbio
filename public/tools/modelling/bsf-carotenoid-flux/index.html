@@ -732,6 +732,23 @@ function leverage(P, ss){
   const out=active.map(e=>[e.id, m[e.id]]).sort((a,b)=>b[1]-a[1]);
   return {out, J0};
 }
+// The 1%-FCC ranking is a LOCAL derivative — it tells you what helps at the margin, not
+// what a big slider move will actually deliver. Re-check the top lever at a realistic
+// +20% boost: if a shared pool (NADPH/acetyl-CoA/ATP) is tightening as that enzyme's own
+// demand rises, the realized gain falls well short of the linear (1%-FCC × 20) prediction.
+// Returns null when there's nothing to flag (no saturation, or gain too small to judge).
+function leverSaturation(P, x0, r0, top){
+  if(!top) return null;
+  const [id, fcc1] = top, J0=targetFlux(r0);
+  if(J0<=1e-9 || fcc1<=0) return null;
+  const predictedPct = fcc1*20;               // linear extrapolation of the 1% FCC to a 20% boost
+  if(predictedPct<=0.5) return null;
+  const P2=Object.assign({},P,{boost:Object.assign({},P.boost)}); P2.boost[id]=1.2;
+  const J2=targetFlux(solveSS(P2,x0).r);
+  const actualPct=(J2-J0)/J0*100;
+  const ratio=actualPct/predictedPct;
+  return ratio<0.6 ? Math.max(0,ratio) : null;
+}
 
 // ════════════════════════════════════════════════════════════════════════
 //  [§4] ENSEMBLE SENSITIVITY — sample every parameter from its [lo,hi] range,
@@ -911,12 +928,18 @@ let lastLev=null, lastEnsembleStats=null, lastR=null, lastX_MAP=null, lastP=null
 function levLookup(id){ if(!lastLev) return 0; const f=lastLev.out.find(o=>o[0]===id); return f?f[1]:0; }
 function ensLookup(id){ if(!lastEnsembleStats) return null; return lastEnsembleStats.find(s=>s.id===id)||null; }
 
+// Absolute reference scale for FCC (flux-control coefficient) bars, shared by the flux-map
+// box indicators, the full leverage ranking list, and the ensemble sensitivity bars — a
+// control of this magnitude draws a "full" bar everywhere. Fixed (not per-condition-max) so
+// the same number always looks the same size: you can A/B two conditions by eye, not just
+// by reading the printed value.
+const LEV_SCALE=0.3;
 function drawLevBar(g, x, y, h, val, ens, active){
   // vertical edge-bar: solid magnitude ramp by default; once the ensemble has run,
   // solid/hot = "engineer next" (robust), hatched = "measure first" (rank unstable).
   const track=svgEl('rect',{x:x-4,y:y,width:4,height:h,rx:1.5,class:'levbar-track'}); g.appendChild(track);
   if(!active){ return; }
-  const maxAbs=Math.max(0.3, Math.abs(val), ens?Math.max(Math.abs(ens.lo),Math.abs(ens.hi)):0);
+  const maxAbs=Math.max(LEV_SCALE, Math.abs(val), ens?Math.max(Math.abs(ens.lo),Math.abs(ens.hi)):0);
   const cls = ens ? ens.cls : (val<0?'negative':(Math.abs(val)>0.15?'engineer':'minor'));
   const wrap=svgEl('g',{class:'levbar '+cls});
   if(ens){
@@ -1182,33 +1205,39 @@ function diagnose(x, r, P, lev){
   const top=lev.out[0], prod=astaxOn()?'astaxanthin':'β-carotene';
   const wtCyc=STATE.enzymes.carrp.variant==='WT';
   if((P.prenol_in>0||P.isoprenol_in>0) && !iupActive())
-    msgs.push(['warn','<b>You\'re feeding isopentenols but the IUP module isn\'t built.</b> BSF can\'t convert prenol/isoprenol on its own — add choline kinase + IPK to a cassette, or none of the feed is used.']);
+    msgs.push(['warn','<b>You\'re feeding isopentenols but the IUP module isn\'t built.</b> Because BSF has no endogenous route from prenol/isoprenol into the isoprenoid pathway, the feed can only enter through the engineered choline kinase + IPK bypass — until both are in a cassette, none of the fed alcohol is converted, it just sits there.']);
   if(iupActive() && (P.prenol_in>0||P.isoprenol_in>0) && r.atpFactor<0.6)
-    msgs.push(['warn','<b>IUP is ATP-throttled.</b> The 2-ATP-per-C5 cost is outrunning the ATP headroom — fed isopentenols aren\'t fully converted. Raise ATP headroom or feed less.']);
+    msgs.push(['warn',`<b>IUP is ATP-throttled</b> (running at ${(r.atpFactor*100).toFixed(0)}% of potential). Because each isopentenol costs 2 ATP to phosphorylate (CK then IPK) before it can join the pathway, and that cost is gated against the ATP headroom slider, demand is currently outrunning the headroom you've allowed — the excess feed isn't being wasted as carbon, it's just not getting phosphorylated at all. Raise ATP headroom (if you can justify more spare ATP-regeneration capacity in vivo) or feed/express less.`]);
   if(LYC>1.5 && LYC>1.3*BCAR && wtCyc)
-    msgs.push(['warn','<b>Lycopene is piling up.</b> The WT cyclase chokes on its own substrate. Switch CarRP to Y27R, or ease off SaGGPPs so lycopene stays low.']);
+    msgs.push(['warn','<b>Lycopene is piling up.</b> Because the wild-type cyclase (CarRP) is substrate-inhibited by its own product lycopene, pushing more flux in through SaGGPPs makes the jam worse, not better. Switch CarRP to the Y27R variant (which escapes the inhibition), or ease off SaGGPPs so lycopene stays low enough for WT CarRP to keep clearing it.']);
   // [§1] MVK active-site product inhibition status
   if(STATE.enzymes.mva_lower.nativeExpr+casLevels('mva_lower')>0){
     const K=P.K, mvkInh=1/(1+FPP/K.ki_FPP+GPP/K.ki_GPP+GGPP/K.ki_GGPP), fbr=STATE.enzymes.mva_lower.variant==='FBR';
     if(!fbr && mvkInh<0.65)
-      msgs.push(['warn',`<b>MVK is product-inhibited</b> (running at ${(mvkInh*100).toFixed(0)}% — GPP/FPP/GGPP compete at its ATP site). Overexpressing the <i>native</i> MVK stays throttled; only a <b>feedback-resistant (FBR) MVK variant</b> escapes it. Switch the MVK variant to FBR to see the difference.`]);
+      msgs.push(['warn',`<b>MVK is product-inhibited</b> (running at ${(mvkInh*100).toFixed(0)}% — GPP/FPP/GGPP compete at its ATP site). Because this is feedback inhibition at MVK's own active site, not a supply shortage, overexpressing the <i>native</i> enzyme just adds more inhibited copies — it stays throttled regardless of expression level. Only a <b>feedback-resistant (FBR) MVK variant</b>, which no longer binds GPP/FPP/GGPP at that site, escapes it. Switch the MVK variant to FBR to see the difference.`]);
     else if(fbr && mvkInh<0.65)
-      msgs.push(['ok',`<b>FBR MVK is bypassing the prenyl-PP inhibition</b> that would hold the native enzyme at ${(mvkInh*100).toFixed(0)}% — this is the engineered-vs-cisgenic lever.`]);
+      msgs.push(['ok',`<b>FBR MVK is bypassing the prenyl-PP inhibition</b> that would hold the native enzyme at ${(mvkInh*100).toFixed(0)}%. Because the FBR mutation removes GPP/FPP/GGPP binding at the ATP site, it keeps running at full rate even as downstream prenyl-PP pools build up — this is the engineered-vs-cisgenic lever.`]);
   }
   if(r.nadphAvail<0.5 && STATE.enzymes.hmgr.nativeExpr+casLevels('hmgr')>0)
-    msgs.push(['warn','<b>NADPH-limited.</b> HMGR and FAS are both draining the shared NADPH pool — pushing HMGR harder won\'t help until reductant supply or FAS draw gives. (HMGR costs 2 NADPH/mevalonate; IUP costs none.)']);
+    msgs.push(['warn',`<b>NADPH-limited</b> (${(r.nadphAvail*100).toFixed(0)}% of NADPH demand met). Because HMGR (2 NADPH/mevalonate) and FAS both draw on one shared, conserved NADPH pool, every unit HMGR takes is a unit FAS can't get and vice versa — pushing HMGR expression higher just deepens the shortfall rather than raising real flux, since the reaction is already reductant-gated (\`r.hmgr = mm(...) * nadphAvail\`). Relief has to come from outside that trade: raise reductant supply, ease FAS draw, or route more C5 through the IUP feed, which costs ATP but no NADPH.`]);
   if(r.acoaAvail<0.5)
-    msgs.push(['warn','<b>Acetyl-CoA-limited.</b> The MVA entry and FAS are competing for the shared acetyl-CoA pool. Ease the FAS draw, or bypass the carbon entirely with the IUP feed (consumes no acetyl-CoA).']);
-  if(hi(GGPP)&&lo(PHY)) msgs.push(['warn','<b>GGPP backs up, little phytoene.</b> Phytoene synthase (CarRP) is limiting — boost it.']);
-  if((hi(IPP)||hi(DMAPP))&&lo(GGPP)&&GGPP<FPP) msgs.push(['warn','<b>C5/C15 units accumulating, GGPP low.</b> The prenyltransferases (FPPS / GGPPS / SaGGPPs) can\'t keep up — add or boost them.']);
+    msgs.push(['warn',`<b>Acetyl-CoA-limited</b> (${(r.acoaAvail*100).toFixed(0)}% of acetyl-CoA demand met). Because MVA entry (thiolase) and FAS compete for the same acetyl-CoA pool, more MVA-side expression can't create carbon that isn't there — it just intensifies the competition. Ease the FAS draw, or bypass the shared pool entirely with the IUP feed (consumes no acetyl-CoA, only ATP).`]);
+  if(hi(GGPP)&&lo(PHY)) msgs.push(['warn','<b>GGPP backs up, little phytoene.</b> Because GGPP is accumulating upstream while its downstream product stays low, the conversion step itself — phytoene synthase (CarRP) — is the bottleneck, not GGPP supply. Boost it.']);
+  if((hi(IPP)||hi(DMAPP))&&lo(GGPP)&&GGPP<FPP) msgs.push(['warn','<b>C5/C15 units accumulating, GGPP low.</b> Because IPP/DMAPP are building up while GGPP stays scarce, the prenyltransferases that chain them together (FPPS / GGPPS / SaGGPPs) can\'t keep pace with the C5 supply reaching them — add or boost them.']);
   if(DMAPP<0.3*mean&&IPP>1.5*mean&&r.saD<0.05*Math.max(r.saF,1e-6)+1e-6&&(P.isoprenol_in>0||STATE.enzymes.mva_lower.nativeExpr>0))
-    msgs.push(['warn','<b>IPP high but DMAPP starved.</b> IDI is too weak to make the DMAPP primer. Boost IDI or feed prenol (which makes DMAPP directly).']);
+    msgs.push(['warn','<b>IPP high but DMAPP starved.</b> Because IDI is the only route that converts surplus IPP into the DMAPP primer GGPPS/SaGGPPs actually need to start a chain, a weak IDI leaves IPP piling up unused on one side while the other starves. Boost IDI, or feed prenol (which makes DMAPP directly, skipping IDI).']);
   if(lo(IPP)&&lo(DMAPP)&&lo(FPP)&&lo(GGPP)&&targetFlux(r)<0.05)
-    msgs.push(['warn','<b>Everything upstream is thin — supply-limited.</b> Express MVA recombinantly (escape feedback) and/or feed prenol/isoprenol.']);
-  if(astaxOn()&&hi(BCAR)&&lo(ASTA)) msgs.push(['warn','<b>β-carotene high, astaxanthin low.</b> CrtW-Z can\'t reach its substrate — raise accessibility (target it to lipid droplets).']);
-  if(r.lipidShare>0.7) msgs.push(['warn','<b>Most carbon is still going to storage lipid.</b> Isoprenoid supply is weak relative to the fat-body pull — push MVA harder or ease the FAS draw.']);
-  else if(r.lipidShare<0.2) msgs.push(['ok','<b>Heads-up:</b> the MVA push is now cannibalising lipogenesis (little carbon left for storage lipid — there is a sweet spot, lipid droplets also sequester the product).']);
-  if(top&&top[1]>0.05) msgs.unshift(['ok',`<b>Biggest lever: ${ENZ[top[0]].name}</b> (control ${top[1].toFixed(2)}). Boosting it gives the most extra ${prod} right now.`]);
+    msgs.push(['warn','<b>Everything upstream is thin — supply-limited.</b> Because every C5/C15 pool is running low simultaneously, no single downstream enzyme is the bottleneck — there just isn\'t enough isoprenoid precursor entering the pathway at all. Express MVA recombinantly (escape native feedback) and/or feed prenol/isoprenol.']);
+  if(astaxOn()&&hi(BCAR)&&lo(ASTA)) msgs.push(['warn','<b>β-carotene high, astaxanthin low.</b> Because β-carotene is accumulating while its oxidized product stays low, CrtW-Z has substrate available but can\'t reach it efficiently — raise accessibility (target it to lipid droplets, where β-carotene actually partitions).']);
+  if(r.lipidShare>0.7) msgs.push(['warn','<b>Most carbon is still going to storage lipid.</b> Because FAS is winning the competition for shared acetyl-CoA/NADPH by a wide margin, isoprenoid supply is weak relative to the fat body\'s pull toward lipogenesis — push MVA harder or ease the FAS draw.']);
+  else if(r.lipidShare<0.2) msgs.push(['ok','<b>Heads-up:</b> the MVA push is now cannibalising lipogenesis. Because carbon is a zero-sum pool between the two routes, driving isoprenoid flux this hard leaves little for storage lipid — and lipid droplets are also where the lipophilic product partitions, so there\'s a real sweet spot rather than "more MVA is always better."']);
+  if(top&&top[1]>0.05){
+    const sat=leverSaturation(P,x,r,top);
+    const satNote = sat!=null
+      ? ` Heads up: that control number is a <i>local</i> estimate (a tiny ±1% nudge) — it doesn't account for the shared pools tightening as you push further. At a realistic +20% boost, only about ${(sat*100).toFixed(0)}% of the predicted gain actually shows up, because ${ENZ[top[0]].name} draws on a pool (NADPH, acetyl-CoA, or ATP headroom) that's already getting scarce. Expect diminishing returns well before you've maxed the slider — watch the avail bars as you push it.`
+      : '';
+    msgs.unshift(['ok',`<b>Biggest lever: ${ENZ[top[0]].name}</b> (control ${top[1].toFixed(2)}). Because a small boost here produces more extra ${prod} per unit of expression than any other active enzyme right now — it's currently the least-constrained step in the chain.${satNote}`]);
+  }
   if(!msgs.length) msgs.push(['ok','No single dominant bottleneck — flux is fairly balanced.']);
   return msgs;
 }
@@ -1227,7 +1256,11 @@ function recompute(){
   drawMap(x,r,P,lev);
   if(pinnedId||hoverId) renderInspector(pinnedId||hoverId);
   if(pinnedId){ const el=document.querySelector(`[data-eid="${pinnedId}"]`); if(el) el.classList.add('pinned'); }
-  const maxA=Math.max(1e-6,...lev.out.map(o=>Math.abs(o[1])));
+  // Fixed floor (not just the current condition's own max) so bar LENGTH is comparable
+  // A/B across conditions: a control of 0.06 always draws short, in any scenario, instead
+  // of stretching to fill the row just because nothing bigger is active right now. Matches
+  // the flux-map box indicator's scale (drawLevBar, LEV_SCALE) so the two views agree.
+  const maxA=Math.max(LEV_SCALE,...lev.out.map(o=>Math.abs(o[1])));
   document.getElementById('fccBars').innerHTML = lev.out.length
     ? lev.out.map(o=>barRow(ENZ[o[0]].name, o[1], o[1]/maxA, true)).join('')
     : '<div class="hint">No active enzymes producing '+prod+' yet.</div>';
@@ -1255,7 +1288,8 @@ function renderEnsemble(res){
   if(!res.stats.length){ document.getElementById('ensBars').innerHTML='<div class="hint">No active enzymes producing product yet.</div>';
     document.getElementById('ensVerdict').innerHTML=''; return; }
   const all=res.stats.flatMap(s=>[s.lo,s.hi,s.med]);
-  const span=Math.max(0.05, Math.max(...all.map(Math.abs))), L=-span, R=span;   // symmetric, signed
+  // Same fixed LEV_SCALE floor as the FCC ranking bars, for cross-condition comparability.
+  const span=Math.max(LEV_SCALE, Math.max(...all.map(Math.abs))), L=-span, R=span;   // symmetric, signed
   const pos=v=>((v-L)/(R-L))*100;
   document.getElementById('ensBars').innerHTML = res.stats.map(s=>{
     const x0=Math.max(0,Math.min(100,pos(s.lo))), x1=Math.max(0,Math.min(100,pos(s.hi)));
