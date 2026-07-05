@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVA pathway notebook — BeachBio</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* the one launch link, styled like the primary button */
+  .launch {
+    display: inline-block;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #1a0d09;
+    border-radius: 6px;
+    padding: 10px 18px;
+    transition: filter .15s;
+  }
+  .launch:hover { filter: brightness(1.08); }
+  .launch-row { margin: 4px 0 6px; }
+  .cascade {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--field, var(--inputbg));
+    border: 1px solid var(--line, var(--inputbd));
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 2px 0 16px;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">modelling · interactive notebook</p>
+  <h1>MVA pathway — minimal flux model</h1>
+  <p class="sub">A stripped-down, MVP version of the
+    <a href="/tools/modelling/bsf-carotenoid-flux/">BSF carotenoid flux tool</a> — just the
+    mevalonate trunk, as a real Jupyter notebook that runs entirely in your browser. Edit the
+    parameters, re-run, and watch the pathway respond. No install, no server: Python is compiled
+    to WebAssembly and executed client-side (JupyterLite + Pyodide).</p>
+
+  <div class="cascade">acetyl-CoA → HMG-CoA → mevalonate → IPP ⇌ DMAPP → GPP → FPP
+             HMGR      MVK·PMK·MVD    IDI          FPPS   FPPS</div>
+
+  <p class="launch-row">
+    <a class="launch" href="lite/notebooks/index.html?path=mva-flux-model.ipynb">Open the notebook →</a>
+  </p>
+  <p class="hint">First load pulls the Python runtime (numpy / scipy / matplotlib) from a CDN —
+    give it a few seconds, then it's cached. Run the cells top to bottom with
+    <code>Shift+Enter</code>.</p>
+
+  <div class="note">
+    <p>This is deliberately the <b>minimal skeleton</b>: seven pools, six reactions, solved to
+      steady state with a small dilution term on every pool. Everything the full tool adds —
+      shared cofactor pools, MVK product inhibition, expression cassettes, the carotenoid tail,
+      and the Monte-Carlo sensitivity ensemble — is left out on purpose. Units are relative, not
+      µM: the point is where flux backs up, not a calibrated titre.</p>
+    <p>Prefer to run it elsewhere? The notebook source is
+      <a href="mva-flux-model.ipynb">mva-flux-model.ipynb</a> — download and open it in any
+      Jupyter environment.</p>
+  </div>
+
+</div>
+<script src="/tools/nav.js"></script>
+</body>
+</html>

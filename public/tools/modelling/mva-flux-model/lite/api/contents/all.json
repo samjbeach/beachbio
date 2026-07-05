@@ -1,0 +1,29 @@
+{
+  "content": [
+    {
+      "content": null,
+      "created": "2026-07-05T10:00:24.758095Z",
+      "format": null,
+      "hash": null,
+      "hash_algorithm": null,
+      "last_modified": "2026-07-05T10:00:21.849691Z",
+      "mimetype": null,
+      "name": "mva-flux-model.ipynb",
+      "path": "mva-flux-model.ipynb",
+      "size": 9974,
+      "type": "notebook",
+      "writable": true
+    }
+  ],
+  "created": "2026-07-05T10:00:24.758095Z",
+  "format": "json",
+  "hash": null,
+  "hash_algorithm": null,
+  "last_modified": "2026-07-05T10:00:24.758095Z",
+  "mimetype": null,
+  "name": "",
+  "path": "",
+  "size": null,
+  "type": "directory",
+  "writable": true
+}

@@ -10,6 +10,7 @@
       tools: [
         { label: "Saponification timer",  path: "/tools/modelling/saponification-timer/" },
         { label: "BSF carotenoid flux",   path: "/tools/modelling/bsf-carotenoid-flux/" },
+        { label: "MVA pathway notebook",  path: "/tools/modelling/mva-flux-model/" },
       ],
     },
     {
