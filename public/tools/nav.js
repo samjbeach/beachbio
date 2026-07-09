@@ -21,6 +21,12 @@
       ],
     },
     {
+      heading: "analytics",
+      tools: [
+        { label: "BSF expression lookup", path: "/tools/analytics/bsf-expression-lookup/" },
+      ],
+    },
+    {
       heading: "reference",
       tools: [
         { label: "Style guide", path: "/tools/_template/" },

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BSF Expression Lookup — BeachBio</title>
+
+<!-- ── BeachBio tool head boilerplate ──────────────────────────────────── -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* ── tool-specific styles (small; tokens only) ─────────────────────────── */
+  .searchbar { display: flex; gap: 10px; align-items: stretch; }
+  .searchbar input[type="text"] { flex: 1; font-family: var(--mono); }
+  .searchbar button { white-space: nowrap; }
+
+  #status {
+    font-family: var(--mono); font-size: 12px; color: var(--faint);
+    margin: 6px 0 0; min-height: 1.2em;
+  }
+  #status.err { color: var(--warn); }
+
+  .pick { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .pick button {
+    text-align: left; font-family: var(--mono); font-size: 12px;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .pick button .pid { color: var(--accent); font-weight: 600; }
+  .pick button .pdesc { color: var(--muted); font-weight: 400; }
+
+  .gene-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+  .gene-head .gid { font-family: var(--mono); font-size: 20px; color: var(--accent); font-weight: 600; }
+  .gene-head .loc { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .gene-head .niso { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+  .iso + .iso { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .iso-id { font-family: var(--mono); font-size: 12px; color: var(--ink); font-weight: 600; margin: 0 0 8px; }
+  .iso-id .tag {
+    font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--faint); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 6px; margin-left: 8px; font-weight: 500;
+  }
+
+  dl.ann { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+  dl.ann dt {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--faint); white-space: nowrap; padding-top: 2px;
+  }
+  dl.ann dd { margin: 0; font-size: 13px; color: var(--ink); word-break: break-word; }
+  dl.ann dd.mono { font-family: var(--mono); font-size: 12px; }
+  dl.ann dd .sub { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  dl.ann dd.none { color: var(--faint); }
+
+  .tpm-wrap { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 720px) { .tpm-wrap { grid-template-columns: 1fr; } }
+  .tpm-scroll { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table.tpm { margin: 0; }
+  table.tpm th { position: sticky; top: 0; z-index: 1; }
+  table.tpm td.s { font-family: var(--mono); color: var(--muted); }
+  table.tpm td.v { font-family: var(--mono); text-align: right; color: var(--ink); }
+  .chart-box { min-width: 0; }
+  .chart-box canvas { width: 100% !important; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">analytics · transcriptomics</p>
+  <h1>BSF Expression Lookup</h1>
+  <p class="sub">Point lookup for a single <i>Hermetia illucens</i> gene: functional
+    annotation plus TPM across all 37 RNA-seq samples, joined from the predicted
+    gene set and the expression matrix. Search by gene ID (e.g. <code>HIJ000123</code>)
+    or by a word in the annotation (e.g. <code>chitinase</code>).</p>
+
+  <div class="panel">
+    <div class="searchbar">
+      <input type="text" id="q" placeholder="HIJ000123  ·  or  ·  chitinase"
+             autocomplete="off" spellcheck="false" disabled>
+      <button class="primary" id="go" disabled>Look up</button>
+    </div>
+    <p id="status">Loading query engine…</p>
+  </div>
+
+  <!-- search results / pick-list / messages -->
+  <div id="results" class="hidden"></div>
+
+  <!-- gene detail -->
+  <div id="detail" class="hidden">
+    <h2>Annotation</h2>
+    <div class="panel">
+      <div class="gene-head" id="geneHead"></div>
+      <div id="isoforms" style="margin-top:14px"></div>
+    </div>
+
+    <h2>Expression <span class="unit">TPM</span></h2>
+    <div class="panel">
+      <div class="tpm-wrap">
+        <div class="tpm-scroll">
+          <table class="tpm">
+            <thead><tr><th>Sample</th><th style="text-align:right">TPM</th></tr></thead>
+            <tbody id="tpmBody"></tbody>
+          </table>
+        </div>
+        <div class="chart-box"><canvas id="chart" height="220"></canvas></div>
+      </div>
+      <p class="hint">TPM is gene-level — shared across a gene's isoforms. Sample
+        codes: <code>T1–T8</code> larval time-course · <code>FG/MG/HG/MT/WMT/FB</code>
+        larval tissues · <code>F*/M*</code> adult female/male (h head, t tarsus, w whole-body).</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>How this is built.</b> The annotation is transcript-level, so genes with
+    multiple isoforms (<code>.t1</code>, <code>.t2</code>…) show one annotation
+    block per isoform — their BLAST hits and domains can differ. TPM is measured
+    per gene and shown once. Data is joined offline by <code>prep.py</code> into
+    <code>data.parquet</code> and queried in your browser with DuckDB-WASM.
+  </div>
+
+</div>
+
+<!-- Chart.js (classic global) loaded before the app module -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script type="module" src="./app.js"></script>
+
+<!-- ── Sidebar nav — keep last ───────────────────────────────────────────── -->
+<script src="/tools/nav.js"></script>
+</body>
+</html>
