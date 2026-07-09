@@ -14,16 +14,94 @@ const SAMPLES = [
   "T1","T2","T3","T4","T5","T6","T7","T8","HG","MG4","MT3","WMT3","FB",
 ];
 
-// Hook for a FUTURE enhancement (paper Table 4): mapping each sample to a
-// tissue / stage / sex group for averaging. Intentionally NOT implemented —
-// wire up a { sample: group } map here and group the TPM table/chart by it.
-// const SAMPLE_GROUPS = { /* FG1: "larval foregut", ... */ };
+// ── Sample metadata (paper Table 4) ─────────────────────────────────────────
+// Developmental stage, tissue, sex, and days-after-hatching for every sample.
+// Drives the Stage/Tissue filters and replicate collapsing.
+const STAGES = {
+  "1st-2nd instar": { cls: "immature", order: 1, label: "1st–2nd instar larva" },
+  "3rd-4th instar": { cls: "immature", order: 2, label: "3rd–4th instar larva" },
+  "5th instar":     { cls: "immature", order: 3, label: "5th instar larva" },
+  "6th instar":     { cls: "immature", order: 4, label: "6th instar larva" },
+  "Pupa":           { cls: "immature", order: 5, label: "pupa" },
+  "Adult":          { cls: "adult",    order: 6, label: "adult" },
+};
+
+// code -> { t: tissue, s: stage key, day?: number, sex?: "F"|"M" }
+const META = {
+  T1: { t: "Whole body", s: "1st-2nd instar", day: 1 },
+  T2: { t: "Whole body", s: "3rd-4th instar", day: 3 },
+  T3: { t: "Whole body", s: "5th instar", day: 5 },
+  T4: { t: "Whole body", s: "5th instar", day: 7 },
+  T5: { t: "Whole body", s: "5th instar", day: 9 },
+  T6: { t: "Whole body", s: "6th instar", day: 11 },
+  T7: { t: "Whole body", s: "6th instar", day: 12 },
+  T8: { t: "Whole body", s: "6th instar", day: 16 },
+  L:  { t: "Whole body", s: "6th instar" },
+  FG1: { t: "Full gut", s: "6th instar" },
+  FG2: { t: "Full gut", s: "6th instar" },
+  FG3: { t: "Full gut", s: "6th instar" },
+  HG:  { t: "Hindgut", s: "6th instar", day: 20 },
+  MG1: { t: "Midgut", s: "6th instar" },
+  MG2: { t: "Midgut", s: "6th instar" },
+  MG3: { t: "Midgut", s: "6th instar" },
+  MG4: { t: "Midgut", s: "6th instar", day: 20 },
+  MT1: { t: "Malpighian tubules", s: "6th instar" },
+  MT2: { t: "Malpighian tubules", s: "6th instar" },
+  MT3: { t: "Malpighian tubules", s: "6th instar", day: 20 },
+  WMT1: { t: "White Malpighian tubules", s: "6th instar" },
+  WMT2: { t: "White Malpighian tubules", s: "6th instar" },
+  WMT3: { t: "White Malpighian tubules", s: "6th instar", day: 20 },
+  FB:  { t: "Fat body", s: "6th instar", day: 20 },
+  P:   { t: "Whole body", s: "Pupa" },
+  Fh1: { t: "Head", s: "Adult", sex: "F" },
+  Fh2: { t: "Head", s: "Adult", sex: "F" },
+  Ft1: { t: "Tarsus", s: "Adult", sex: "F" },
+  Ft2: { t: "Tarsus", s: "Adult", sex: "F" },
+  Fw1: { t: "Whole body", s: "Adult", sex: "F" },
+  Fw2: { t: "Whole body", s: "Adult", sex: "F" },
+  Mh1: { t: "Head", s: "Adult", sex: "M" },
+  Mh2: { t: "Head", s: "Adult", sex: "M" },
+  Mt1: { t: "Tarsus", s: "Adult", sex: "M" },
+  Mt2: { t: "Tarsus", s: "Adult", sex: "M" },
+  Mw1: { t: "Whole body", s: "Adult", sex: "M" },
+  Mw2: { t: "Whole body", s: "Adult", sex: "M" },
+};
+
+// Build an index-aligned metadata array (parallel to SAMPLES / the TPM array).
+// repGroup keys the true biological replicates: dissected larval tissues collapse
+// by tissue (MG1–4 etc.); adults by tissue+sex; the whole-body time-course keeps
+// each timepoint distinct (day is part of the key), so "collapse" leaves it alone.
+const SAMPLE_META = SAMPLES.map((code, i) => {
+  const m = META[code];
+  const cls = STAGES[m.s].cls;
+  const day = m.day ?? null;
+  const sex = m.sex ?? null;
+  const timeCourse = m.t === "Whole body" && cls === "immature"; // T-series + L + P
+  const dayKey = timeCourse ? String(day ?? "") : "";
+  return {
+    i, code, tissue: m.t, stage: m.s, stageClass: cls, day, sex, timeCourse,
+    repGroup:   [m.t, m.s, sex ?? "", dayKey].join("|"),
+    mergeGroup: [m.t, m.s, "",        dayKey].join("|"), // sex dropped
+  };
+});
+
+// rep index/count within each repGroup (for "(rep n)" labels), by SAMPLES order.
+{
+  const count = {}, seen = {};
+  SAMPLE_META.forEach((m) => { count[m.repGroup] = (count[m.repGroup] || 0) + 1; });
+  SAMPLE_META.forEach((m) => {
+    seen[m.repGroup] = (seen[m.repGroup] || 0) + 1;
+    m.repIndex = seen[m.repGroup];
+    m.repCount = count[m.repGroup];
+  });
+}
 
 const PARQUET = "data.parquet";
 const $ = (id) => document.getElementById(id);
 
 let conn = null;      // DuckDB connection
 let chart = null;     // Chart.js instance
+let currentTPM = null; // TPM array of the gene currently shown (index-aligned to SAMPLES)
 
 // ── DuckDB bootstrap ────────────────────────────────────────────────────────
 async function initDB() {
@@ -204,16 +282,11 @@ function renderGene(rows) {
   // isoform annotation blocks
   $("isoforms").innerHTML = rows.map(isoformBlock).join("");
 
-  // TPM table (gene-level; identical across isoforms → use first row)
-  const tpm = toNums(g.tpm);
-  $("tpmBody").innerHTML = SAMPLES.map((s, i) => {
-    const v = tpm[i];
-    return `<tr><td class="s">${esc(s)}</td><td class="v">${
-      v == null || Number.isNaN(v) ? "—" : v.toFixed(2)
-    }</td></tr>`;
-  }).join("");
+  // TPM (gene-level; identical across isoforms → use first row). Filtering,
+  // collapsing and charting are all derived from this array by renderExpression.
+  currentTPM = toNums(g.tpm);
+  renderExpression();
 
-  drawChart(tpm);
   show($("detail"));
 
   markActivePick(g.gene_id);
@@ -265,18 +338,134 @@ function isoformBlock(r) {
   );
 }
 
+// ── expression view (filter · collapse · table · chart) ─────────────────────
+const sexSym = (s) => (s === "F" ? "♀" : s === "M" ? "♂" : "");
+
+function sampleLabel(m) {
+  let s = `${m.tissue}, ${STAGES[m.stage].label}`;
+  if (m.timeCourse && m.day != null) s += `, day ${m.day}`;
+  if (m.sex) s += ` ${sexSym(m.sex)}`;
+  if (m.repCount > 1) s += ` (rep ${m.repIndex})`;
+  return s;
+}
+
+function groupLabelFor(members, merged) {
+  const m0 = members[0];
+  let s = `${m0.tissue}, ${STAGES[m0.stage].label}`;
+  if (m0.timeCourse && m0.day != null) s += `, day ${m0.day}`;
+  if (!merged && m0.sex) s += ` ${sexSym(m0.sex)}`;
+  return s;
+}
+
+// Recompute the TPM table + chart from currentTPM and the control state.
+function renderExpression() {
+  if (!currentTPM) return;
+  const stageSel = $("fStage").value;
+  const tissueSel = $("fTissue").value;
+  const collapse = $("cCollapse").checked;
+  const mergeSex = collapse && $("cMergeSex").checked;
+
+  // "merge sexes" only means something when collapsing
+  $("cMergeSex").disabled = !collapse;
+  $("mergeWrap").classList.toggle("disabled", !collapse);
+  $("tpmValHead").textContent = collapse ? "Mean TPM" : "TPM";
+
+  const sel = SAMPLE_META.filter((m) => {
+    if (tissueSel !== "all" && m.tissue !== tissueSel) return false;
+    if (stageSel === "all") return true;
+    if (stageSel === "immature") return m.stageClass === "immature";
+    return m.stage === stageSel;
+  });
+
+  let rows;
+  if (!collapse) {
+    rows = sel.map((m) => ({ label: sampleLabel(m), value: currentTPM[m.i], sem: null, n: 1 }));
+  } else {
+    const groups = new Map();
+    for (const m of sel) {
+      const key = mergeSex ? m.mergeGroup : m.repGroup;
+      (groups.get(key) || groups.set(key, []).get(key)).push(m);
+    }
+    rows = [...groups.values()].map((members) => {
+      const vals = members.map((m) => currentTPM[m.i]).filter((v) => v != null && !Number.isNaN(v));
+      const n = vals.length;
+      const mean = n ? vals.reduce((a, b) => a + b, 0) / n : null;
+      let sem = null;
+      if (n >= 2) {
+        const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
+        sem = sd / Math.sqrt(n);
+      }
+      return {
+        label: groupLabelFor(members, mergeSex), value: mean, sem, n,
+        order: Math.min(...members.map((x) => x.i)),
+      };
+    });
+    rows.sort((a, b) => a.order - b.order);
+  }
+
+  if (rows.length === 0) {
+    $("tpmBody").innerHTML =
+      `<tr><td colspan="2" class="s" style="color:var(--faint)">No samples match this stage + tissue.</td></tr>`;
+    if (chart) { chart.destroy(); chart = null; }
+    return;
+  }
+  updateTpmTable(rows, collapse);
+  drawChart(rows);
+}
+
+function updateTpmTable(rows, collapse) {
+  $("tpmBody").innerHTML = rows.map((r) => {
+    let v;
+    if (r.value == null || Number.isNaN(r.value)) v = "—";
+    else if (r.sem != null) v = `${r.value.toFixed(2)} <span class="pm">± ${r.sem.toFixed(2)}</span>`;
+    else v = r.value.toFixed(2);
+    const nTag = collapse && r.n > 1 ? ` <span class="ntag">n=${r.n}</span>` : "";
+    return `<tr><td class="s">${esc(r.label)}${nTag}</td><td class="v">${v}</td></tr>`;
+  }).join("");
+}
+
 // ── chart ───────────────────────────────────────────────────────────────────
 function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 
-function drawChart(tpm) {
+// Custom plugin: draw SEM whiskers (Chart.js has no native error bars). Lower
+// cap is clamped at 0 so it never dips below the zero baseline.
+function errorBarPlugin(sems) {
+  return {
+    id: "errorbars",
+    afterDatasetsDraw(ch) {
+      const { ctx, scales: { y } } = ch;
+      const data = ch.data.datasets[0].data;
+      ctx.save();
+      ctx.strokeStyle = css("--muted");
+      ctx.lineWidth = 1.25;
+      ch.getDatasetMeta(0).data.forEach((bar, i) => {
+        const sem = sems[i], val = data[i];
+        if (sem == null || !(sem > 0) || val == null) return;
+        const x = bar.x;
+        const yTop = y.getPixelForValue(val + sem);
+        const yBot = y.getPixelForValue(Math.max(0, val - sem));
+        const cap = Math.min(4, Math.max(2, bar.width * 0.2));
+        ctx.beginPath();
+        ctx.moveTo(x, yTop); ctx.lineTo(x, yBot);
+        ctx.moveTo(x - cap, yTop); ctx.lineTo(x + cap, yTop);
+        ctx.moveTo(x - cap, yBot); ctx.lineTo(x + cap, yBot);
+        ctx.stroke();
+      });
+      ctx.restore();
+    },
+  };
+}
+
+function drawChart(rows) {
   const ctx = $("chart").getContext("2d");
   if (chart) chart.destroy();
+  const sems = rows.map((r) => r.sem);
   chart = new Chart(ctx, {
     type: "bar",
     data: {
-      labels: SAMPLES,
+      labels: rows.map((r) => r.label),
       datasets: [{
-        data: SAMPLES.map((_, i) => (tpm[i] == null ? 0 : tpm[i])),
+        data: rows.map((r) => (r.value == null ? 0 : r.value)),
         backgroundColor: css("--accent"),
         borderWidth: 0,
         borderRadius: 2,
@@ -288,12 +477,25 @@ function drawChart(tpm) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: { label: (c) => ` ${c.parsed.y.toFixed(2)} TPM` },
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (c) => {
+              const s = sems[c.dataIndex];
+              return ` ${c.parsed.y.toFixed(2)}${s != null ? " ± " + s.toFixed(2) : ""} TPM`;
+            },
+          },
         },
       },
       scales: {
         x: {
-          ticks: { color: css("--faint"), font: { family: css("--mono"), size: 9 }, maxRotation: 90, minRotation: 90 },
+          ticks: {
+            color: css("--faint"), font: { family: css("--mono"), size: 9 },
+            maxRotation: 90, minRotation: 90,
+            callback: function (v) {
+              const lab = this.getLabelForValue(v);
+              return lab.length > 26 ? lab.slice(0, 25) + "…" : lab;
+            },
+          },
           grid: { display: false },
         },
         y: {
@@ -304,6 +506,7 @@ function drawChart(tpm) {
         },
       },
     },
+    plugins: [errorBarPlugin(sems)],
   });
 }
 
@@ -325,6 +528,8 @@ function hide(el) { el.classList.add("hidden"); }
     $("go").disabled = false;
     $("go").addEventListener("click", search);
     $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+    ["fStage", "fTissue", "cCollapse", "cMergeSex"].forEach((id) =>
+      $(id).addEventListener("change", renderExpression));
     $("q").focus();
   } catch (err) {
     console.error(err);

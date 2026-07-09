@@ -59,13 +59,30 @@
   dl.ann dd .sub { color: var(--muted); font-family: var(--mono); font-size: 11px; }
   dl.ann dd.none { color: var(--faint); }
 
-  .tpm-wrap { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 18px; align-items: start; }
+  .expr-controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+  }
+  .expr-controls .ctl {
+    display: flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .expr-controls .ctl select { text-transform: none; letter-spacing: 0; font-size: 12px; }
+  .expr-controls .toggle { margin: 0; }
+  .expr-controls .ctl-sub { color: var(--faint); font-family: var(--mono); font-size: 10.5px; }
+  .expr-controls .toggle input:disabled { opacity: .4; }
+  .expr-controls #mergeWrap.disabled { opacity: .45; }
+
+  .tpm-wrap { display: grid; grid-template-columns: minmax(220px, 340px) 1fr; gap: 18px; align-items: start; }
   @media (max-width: 720px) { .tpm-wrap { grid-template-columns: 1fr; } }
   .tpm-scroll { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
   table.tpm { margin: 0; }
   table.tpm th { position: sticky; top: 0; z-index: 1; }
   table.tpm td.s { font-family: var(--mono); color: var(--muted); }
-  table.tpm td.v { font-family: var(--mono); text-align: right; color: var(--ink); }
+  table.tpm td.v { font-family: var(--mono); text-align: right; color: var(--ink); white-space: nowrap; }
+  table.tpm td.v .pm { color: var(--muted); }
+  table.tpm td.s .ntag { color: var(--faint); font-size: 10px; }
   .chart-box { min-width: 0; }
   .chart-box canvas { width: 100% !important; }
 
@@ -104,18 +121,49 @@
 
     <h2>Expression <span class="unit">TPM</span></h2>
     <div class="panel">
+      <div class="expr-controls">
+        <label class="ctl">Stage
+          <select id="fStage">
+            <option value="all">All stages</option>
+            <option value="immature">Immature — all (larvae + pupa)</option>
+            <option value="1st-2nd instar">1st–2nd instar larva</option>
+            <option value="3rd-4th instar">3rd–4th instar larva</option>
+            <option value="5th instar">5th instar larva</option>
+            <option value="6th instar">6th instar larva</option>
+            <option value="Pupa">Pupa</option>
+            <option value="Adult">Adult</option>
+          </select>
+        </label>
+        <label class="ctl">Tissue
+          <select id="fTissue">
+            <option value="all">All tissues</option>
+            <option value="Whole body">Whole body</option>
+            <option value="Full gut">Full gut</option>
+            <option value="Midgut">Midgut</option>
+            <option value="Hindgut">Hindgut</option>
+            <option value="Malpighian tubules">Malpighian tubules</option>
+            <option value="White Malpighian tubules">White Malpighian tubules</option>
+            <option value="Fat body">Fat body</option>
+            <option value="Head">Head</option>
+            <option value="Tarsus">Tarsus</option>
+          </select>
+        </label>
+        <label class="toggle"><input type="checkbox" id="cCollapse"> Collapse replicates <span class="ctl-sub">mean ± SEM</span></label>
+        <label class="toggle" id="mergeWrap"><input type="checkbox" id="cMergeSex" disabled> Merge sexes</label>
+      </div>
+
       <div class="tpm-wrap">
         <div class="tpm-scroll">
           <table class="tpm">
-            <thead><tr><th>Sample</th><th style="text-align:right">TPM</th></tr></thead>
+            <thead><tr><th>Sample</th><th style="text-align:right" id="tpmValHead">TPM</th></tr></thead>
             <tbody id="tpmBody"></tbody>
           </table>
         </div>
-        <div class="chart-box"><canvas id="chart" height="220"></canvas></div>
+        <div class="chart-box"><canvas id="chart" height="240"></canvas></div>
       </div>
-      <p class="hint">TPM is gene-level — shared across a gene's isoforms. Sample
-        codes: <code>T1–T8</code> larval time-course · <code>FG/MG/HG/MT/WMT/FB</code>
-        larval tissues · <code>F*/M*</code> adult female/male (h head, t tarsus, w whole-body).</p>
+      <p class="hint" id="exprHint">TPM is gene-level — shared across a gene's isoforms.
+        Use the filters to focus on a stage or tissue; “collapse replicates” averages
+        biological replicates (e.g. the four midgut samples) to a mean ± SEM.</p>
     </div>
   </div>
 
