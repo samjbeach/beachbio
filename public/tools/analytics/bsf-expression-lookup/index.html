@@ -22,13 +22,19 @@
   }
   #status.err { color: var(--warn); }
 
-  .pick { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .pick { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; max-height: 300px; overflow-y: auto; }
   .pick button {
     text-align: left; font-family: var(--mono); font-size: 12px;
     display: flex; gap: 10px; align-items: baseline;
   }
   .pick button .pid { color: var(--accent); font-weight: 600; }
   .pick button .pdesc { color: var(--muted); font-weight: 400; }
+  /* the currently-shown gene, so you can click between hits to compare */
+  .pick button.sel {
+    border-color: var(--accent);
+    background: rgba(242,103,75,.12);
+  }
+  .pick button.sel .pdesc { color: var(--ink); }
 
   .gene-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
   .gene-head .gid { font-family: var(--mono); font-size: 20px; color: var(--accent); font-weight: 600; }

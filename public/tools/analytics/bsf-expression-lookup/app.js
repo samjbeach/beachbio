@@ -151,26 +151,45 @@ function renderPicklist(hits, raw) {
     const iso = Number(h.n_iso) > 1 ? ` ·${h.n_iso} iso` : "";
     const b = document.createElement("button");
     b.className = "preset";
+    b.dataset.gene = h.gene_id;
     b.innerHTML = `<span class="pid">${esc(h.gene_id)}</span>` +
                   `<span class="pdesc">${esc(desc)}${iso}</span>`;
-    b.addEventListener("click", async () => {
-      $("q").value = h.gene_id;
-      const rows = await q(
-        `SELECT * FROM '${PARQUET}' WHERE gene_id = ? ORDER BY transcript_id`,
-        [h.gene_id]
-      );
-      renderGene(rows);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
+    b.addEventListener("click", () => selectGene(h.gene_id));
     pick.appendChild(b);
   }
-  setStatus(`${capped ? "100+" : hits.length} genes match “${raw}”. Pick one.`);
+  const n = capped ? "100+" : hits.length;
+  setStatus(`${n} genes match “${raw}”. Pick one — the list stays so you can compare.`);
   show(box);
 }
 
+// Load + show a gene from the pick-list, keeping the list visible so you can
+// click between hits. Only jump to the detail on the first pick; after that the
+// detail swaps in place while you stay on the list.
+async function selectGene(geneId) {
+  const wasHidden = $("detail").classList.contains("hidden");
+  const rows = await q(
+    `SELECT * FROM '${PARQUET}' WHERE gene_id = ? ORDER BY transcript_id`, [geneId]
+  );
+  renderGene(rows);
+  if (wasHidden) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Highlight the pick that matches the shown gene (no-op if no list is present).
+function markActivePick(geneId) {
+  const btns = document.querySelectorAll("#results .pick button");
+  let active = null;
+  btns.forEach((b) => {
+    const on = b.dataset.gene === geneId;
+    b.classList.toggle("sel", on);
+    if (on) active = b;
+  });
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
 // ── render: single gene detail ──────────────────────────────────────────────
+// Note: does NOT hide the results pick-list — a multi-match list stays visible
+// so you can click between hits. search() hides it up front for direct lookups.
 function renderGene(rows) {
-  hide($("results"));
   const g = rows[0];
 
   // header
@@ -196,7 +215,12 @@ function renderGene(rows) {
 
   drawChart(tpm);
   show($("detail"));
-  setStatus(`Showing ${g.gene_id}.`);
+
+  markActivePick(g.gene_id);
+  const inList = !$("results").classList.contains("hidden");
+  setStatus(inList
+    ? `Showing ${g.gene_id} — click another match above to compare.`
+    : `Showing ${g.gene_id}.`);
 }
 
 function isoformBlock(r) {
