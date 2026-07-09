@@ -18,13 +18,20 @@ const SAMPLES = [
 // Developmental stage, tissue, sex, and days-after-hatching for every sample.
 // Drives the Stage/Tissue filters and replicate collapsing.
 const STAGES = {
-  "1st-2nd instar": { cls: "immature", order: 1, label: "1st–2nd instar larva" },
-  "3rd-4th instar": { cls: "immature", order: 2, label: "3rd–4th instar larva" },
-  "5th instar":     { cls: "immature", order: 3, label: "5th instar larva" },
-  "6th instar":     { cls: "immature", order: 4, label: "6th instar larva" },
+  "1st-2nd instar": { cls: "immature", order: 1, label: "L1–2" },
+  "3rd-4th instar": { cls: "immature", order: 2, label: "L3–4" },
+  "5th instar":     { cls: "immature", order: 3, label: "L5" },
+  "6th instar":     { cls: "immature", order: 4, label: "L6" },
   "Pupa":           { cls: "immature", order: 5, label: "pupa" },
   "Adult":          { cls: "adult",    order: 6, label: "adult" },
 };
+
+// Display-only tissue abbreviations (canonical names stay as the filter keys).
+const TISSUE_LABEL = {
+  "Malpighian tubules": "MalpTub.",
+  "White Malpighian tubules": "White MalpTub.",
+};
+const tissueLabel = (t) => TISSUE_LABEL[t] || t;
 
 // code -> { t: tissue, s: stage key, day?: number, sex?: "F"|"M" }
 const META = {
@@ -342,16 +349,16 @@ function isoformBlock(r) {
 const sexSym = (s) => (s === "F" ? "♀" : s === "M" ? "♂" : "");
 
 function sampleLabel(m) {
-  let s = `${m.tissue}, ${STAGES[m.stage].label}`;
+  let s = `${tissueLabel(m.tissue)}, ${STAGES[m.stage].label}`;
   if (m.timeCourse && m.day != null) s += `, day ${m.day}`;
   if (m.sex) s += ` ${sexSym(m.sex)}`;
-  if (m.repCount > 1) s += ` (rep ${m.repIndex})`;
+  if (m.repCount > 1) s += ` #${m.repIndex}`;
   return s;
 }
 
 function groupLabelFor(members, merged) {
   const m0 = members[0];
-  let s = `${m0.tissue}, ${STAGES[m0.stage].label}`;
+  let s = `${tissueLabel(m0.tissue)}, ${STAGES[m0.stage].label}`;
   if (m0.timeCourse && m0.day != null) s += `, day ${m0.day}`;
   if (!merged && m0.sex) s += ` ${sexSym(m0.sex)}`;
   return s;
