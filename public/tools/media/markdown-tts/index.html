@@ -69,12 +69,27 @@
         <input type="text" id="voice" value="Kore" spellcheck="false">
       </div>
     </div>
+    <div class="two">
+      <div class="field-row">
+        <label for="format">Output format</label>
+        <select id="format">
+          <option value="auto">Auto (by model)</option>
+          <option value="mp3">MP3</option>
+          <option value="pcm">PCM → WAV</option>
+        </select>
+      </div>
+      <div class="field-row" id="rate-row">
+        <label for="rate">PCM sample rate <span class="unit">Hz</span></label>
+        <input type="number" id="rate" value="24000" step="1000">
+      </div>
+    </div>
     <label class="toggle" style="margin-top:10px">
       <input type="checkbox" id="strip" checked> strip Markdown syntax before reading (recommended)
     </label>
     <p class="hint">Model names come from the
       <a href="https://openrouter.ai/collections/text-to-speech-models" target="_blank" rel="noopener" style="color:var(--cyan)">OpenRouter TTS collection</a>.
-      The <code>voice</code> field is used by voice-capable models (Gemini: Kore, Charon, Zephyr, Puck, …; OpenAI: alloy, echo, fable, onyx, nova, shimmer) and ignored by others.</p>
+      The <code>voice</code> field is used by voice-capable models (Gemini: Kore, Charon, Zephyr, Puck, …; OpenAI: alloy, echo, fable, onyx, nova, shimmer) and ignored by others.
+      <br><b>Format:</b> Gemini only returns raw <code>pcm</code> (wrapped here into a playable WAV at the given sample rate — 24000 Hz for Gemini); OpenAI models return <code>mp3</code>. <b>Auto</b> picks the right one from the model name.</p>
   </div>
 
   <!-- ── 2. Markdown input ────────────────────────────────────────────────── -->
@@ -100,7 +115,7 @@
     <div class="status" id="status">Nothing generated yet.</div>
     <audio id="player" controls hidden></audio>
     <div class="out-actions" id="actions" hidden>
-      <a class="download" id="download" download="speech.mp3">↓ download MP3</a>
+      <a class="download" id="download" download="speech.mp3">↓ download audio</a>
     </div>
   </div>
 
@@ -125,31 +140,73 @@
         charcount = $("charcount"), statusEl = $("status"),
         player = $("player"), actions = $("actions"), download = $("download"),
         goBtn = $("go"), keyInput = $("apikey"), modelInput = $("model"),
-        voiceInput = $("voice"), stripInput = $("strip");
+        voiceInput = $("voice"), stripInput = $("strip"),
+        formatSel = $("format"), rateInput = $("rate"), rateRow = $("rate-row");
 
   const LS = {
-    key: "mdtts.apikey", model: "mdtts.model",
-    voice: "mdtts.voice", strip: "mdtts.strip",
+    key: "mdtts.apikey", model: "mdtts.model", voice: "mdtts.voice",
+    strip: "mdtts.strip", format: "mdtts.format", rate: "mdtts.rate",
   };
 
   // ── persistence ──────────────────────────────────────────────────────────
   try {
-    if (localStorage.getItem(LS.key))   keyInput.value   = localStorage.getItem(LS.key);
-    if (localStorage.getItem(LS.model)) modelInput.value = localStorage.getItem(LS.model);
-    if (localStorage.getItem(LS.voice)) voiceInput.value = localStorage.getItem(LS.voice);
+    if (localStorage.getItem(LS.key))    keyInput.value    = localStorage.getItem(LS.key);
+    if (localStorage.getItem(LS.model))  modelInput.value  = localStorage.getItem(LS.model);
+    if (localStorage.getItem(LS.voice))  voiceInput.value  = localStorage.getItem(LS.voice);
+    if (localStorage.getItem(LS.format)) formatSel.value   = localStorage.getItem(LS.format);
+    if (localStorage.getItem(LS.rate))   rateInput.value   = localStorage.getItem(LS.rate);
     if (localStorage.getItem(LS.strip) !== null) stripInput.checked = localStorage.getItem(LS.strip) === "1";
   } catch (e) { /* localStorage may be unavailable */ }
 
   const persist = () => {
     try {
-      localStorage.setItem(LS.key,   keyInput.value.trim());
-      localStorage.setItem(LS.model, modelInput.value.trim());
-      localStorage.setItem(LS.voice, voiceInput.value.trim());
-      localStorage.setItem(LS.strip, stripInput.checked ? "1" : "0");
+      localStorage.setItem(LS.key,    keyInput.value.trim());
+      localStorage.setItem(LS.model,  modelInput.value.trim());
+      localStorage.setItem(LS.voice,  voiceInput.value.trim());
+      localStorage.setItem(LS.format, formatSel.value);
+      localStorage.setItem(LS.rate,   rateInput.value);
+      localStorage.setItem(LS.strip,  stripInput.checked ? "1" : "0");
     } catch (e) {}
   };
-  [keyInput, modelInput, voiceInput].forEach(el => el.addEventListener("input", persist));
-  stripInput.addEventListener("change", persist);
+  [keyInput, modelInput, voiceInput, rateInput].forEach(el => el.addEventListener("input", persist));
+  [stripInput, formatSel].forEach(el => el.addEventListener("change", persist));
+
+  // ── resolve the effective response_format (auto = pcm for Gemini, else mp3)
+  function resolvedFormat() {
+    if (formatSel.value !== "auto") return formatSel.value;
+    return /gemini/i.test(modelInput.value) ? "pcm" : "mp3";
+  }
+  // show the PCM sample-rate field only when the output will be PCM
+  function syncRateRow() { rateRow.style.display = resolvedFormat() === "pcm" ? "" : "none"; }
+  [formatSel, modelInput].forEach(el => el.addEventListener("input", syncRateRow));
+  formatSel.addEventListener("change", syncRateRow);
+
+  // ── wrap raw 16-bit signed little-endian mono PCM in a WAV container ───────
+  function pcmToWav(pcmBytes, sampleRate) {
+    const numChannels = 1, bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+    const blockAlign = numChannels * bitsPerSample / 8;
+    const header = new ArrayBuffer(44);
+    const dv = new DataView(header);
+    const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+    writeStr(0, "RIFF");
+    dv.setUint32(4, 36 + pcmBytes.length, true);
+    writeStr(8, "WAVE");
+    writeStr(12, "fmt ");
+    dv.setUint32(16, 16, true);       // fmt chunk size
+    dv.setUint16(20, 1, true);        // PCM
+    dv.setUint16(22, numChannels, true);
+    dv.setUint32(24, sampleRate, true);
+    dv.setUint32(28, byteRate, true);
+    dv.setUint16(32, blockAlign, true);
+    dv.setUint16(34, bitsPerSample, true);
+    writeStr(36, "data");
+    dv.setUint32(40, pcmBytes.length, true);
+    const out = new Uint8Array(44 + pcmBytes.length);
+    out.set(new Uint8Array(header), 0);
+    out.set(pcmBytes, 44);
+    return new Blob([out], { type: "audio/wav" });
+  }
 
   // ── lightweight markdown → plain text ─────────────────────────────────────
   function stripMarkdown(src) {
@@ -217,6 +274,9 @@
     const input = stripInput.checked ? stripMarkdown(raw) : raw;
     if (!input.trim()) { setStatus("After stripping markdown there's no text to read.", "err"); return; }
 
+    const format = resolvedFormat();
+    const rate = Math.max(8000, parseInt(rateInput.value, 10) || 24000);
+
     goBtn.disabled = true;
     setStatus('<span class="spin">◐</span> Generating…', "busy");
     player.hidden = true; actions.hidden = true;
@@ -232,7 +292,7 @@
           model: model,
           input: input,
           voice: voice || undefined,
-          response_format: "mp3",
+          response_format: format,
         }),
       });
 
@@ -248,16 +308,27 @@
         return;
       }
 
-      const blob = await res.blob();
+      let blob = await res.blob();
       if (blob.size === 0) { setStatus("Got an empty audio response.", "err"); return; }
+
+      // PCM has no container — wrap it so browsers can play/download it as WAV.
+      let ext = "mp3";
+      if (format === "pcm") {
+        const pcm = new Uint8Array(await blob.arrayBuffer());
+        blob = pcmToWav(pcm, rate);
+        ext = "wav";
+      }
 
       if (lastUrl) URL.revokeObjectURL(lastUrl);
       lastUrl = URL.createObjectURL(blob);
       player.src = lastUrl;
       player.hidden = false;
       download.href = lastUrl;
+      download.setAttribute("download", "speech." + ext);
+      download.textContent = "↓ download " + ext.toUpperCase();
       actions.hidden = false;
-      setStatus("Done — " + Math.round(blob.size / 1024).toLocaleString() + " KB.", "ok");
+      setStatus("Done — " + Math.round(blob.size / 1024).toLocaleString() + " KB " +
+                (format === "pcm" ? "(WAV @ " + rate + " Hz)" : "(MP3)") + ".", "ok");
       player.play().catch(() => {});
     } catch (err) {
       setStatus("Request failed: " + (err && err.message ? err.message : err) +
@@ -269,6 +340,7 @@
 
   goBtn.addEventListener("click", generate);
   updateCount();
+  syncRateRow();
 })();
 </script>
 
