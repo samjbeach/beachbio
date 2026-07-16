@@ -217,20 +217,36 @@ const persist = () => { try {
 [voiceSel, deviceSel].forEach(el => el.addEventListener("change", persist));
 
 // ── backend detection ────────────────────────────────────────────────────
-const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu;
+// navigator.gpu can EXIST while requestAdapter() still returns null (e.g. many
+// Android Chrome builds), so we probe for a real adapter rather than trust the
+// object's presence.
+const hasGpuObject = typeof navigator !== "undefined" && !!navigator.gpu;
+let webgpuOK = false;           // set true only if a real adapter is obtained
+async function probeWebGPU() {
+  if (!hasGpuObject) return false;
+  try { return !!(await navigator.gpu.requestAdapter()); } catch (e) { return false; }
+}
 // the device that will actually be used, honouring the selector
 function chosenDevice() {
   if (deviceSel.value === "webgpu") return "webgpu";
   if (deviceSel.value === "wasm")   return "wasm";
-  return hasWebGPU ? "webgpu" : "wasm"; // auto
+  return webgpuOK ? "webgpu" : "wasm"; // auto
 }
 function describeBackend() {
   const d = chosenDevice();
-  if (d === "webgpu") { backendEl.classList.remove("wasm"); backendEl.innerHTML = "Will use <b>WebGPU</b> (GPU-accelerated)" + (hasWebGPU ? "." : " — <b>not detected in this browser</b>; it may fail and fall back to WASM."); }
-  else { backendEl.classList.add("wasm"); backendEl.innerHTML = "Will use <b>WASM (CPU)</b>" + (hasWebGPU ? " by choice." : " — no WebGPU in this browser; synthesis will be slower."); }
+  if (d === "webgpu") {
+    backendEl.classList.remove("wasm");
+    backendEl.innerHTML = "Will use <b>WebGPU</b> (GPU-accelerated). Falls back to WASM automatically if it errors.";
+  } else {
+    backendEl.classList.add("wasm");
+    const why = deviceSel.value === "wasm" ? " by choice."
+      : hasGpuObject ? " — no working WebGPU adapter on this device." : " — no WebGPU in this browser.";
+    backendEl.innerHTML = "Will use <b>WASM (CPU)</b>" + why + " Slower, but works everywhere.";
+  }
 }
 deviceSel.addEventListener("change", describeBackend);
 describeBackend();
+probeWebGPU().then(ok => { webgpuOK = ok; describeBackend(); });
 
 function setStatus(msg, kind) {
   statusEl.className = "status" + (kind ? " " + kind : "");
@@ -292,26 +308,17 @@ fileInput.addEventListener("change", () => loadFile(fileInput.files[0]));
 ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
 drop.addEventListener("drop", e => { if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
 
-// ── model (lazy singleton, keyed by device so switching backend reloads) ────
+// ── model (lazy singletons, cached per device) ──────────────────────────────
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 const dtypeFor = (device) => device === "webgpu" ? "fp32" : "q8"; // fp32 is the known-good WebGPU path; q8 is small + reliable on WASM
-let ttsPromise = null, ttsDevice = null;
-function getTTS() {
-  const device = chosenDevice();
-  if (ttsPromise && ttsDevice === device) return ttsPromise;
-  ttsDevice = device;
+const ttsByDevice = {};        // device -> Promise<KokoroTTS>
+function getTTS(device) {
+  if (ttsByDevice[device]) return ttsByDevice[device];
   setStatus('<span class="spin">◐</span> Loading Kokoro model on ' + device.toUpperCase() + ' (first run downloads the weights)…', "busy");
-  ttsPromise = KokoroTTS.from_pretrained(MODEL_ID, { dtype: dtypeFor(device), device })
-    .catch(async (err) => {
-      if (device === "webgpu") {           // fall back to WASM if WebGPU init fails
-        console.warn("WebGPU init failed, falling back to WASM:", err);
-        setStatus('<span class="spin">◐</span> WebGPU failed — retrying on WASM…', "busy");
-        ttsDevice = "wasm";
-        return KokoroTTS.from_pretrained(MODEL_ID, { dtype: dtypeFor("wasm"), device: "wasm" });
-      }
-      throw err;
-    });
-  return ttsPromise;
+  const p = KokoroTTS.from_pretrained(MODEL_ID, { dtype: dtypeFor(device), device });
+  p.catch(() => { delete ttsByDevice[device]; }); // don't cache a rejected load
+  ttsByDevice[device] = p;
+  return p;
 }
 
 // ── WAV assembly from Float32 chunks ───────────────────────────────────────
@@ -342,6 +349,65 @@ function tokenCount(text) {
   return m ? m.length : 0;
 }
 
+// Core synthesis on a specific device. Throws on any failure (model load or
+// inference) so the orchestrator can fall back. Only touches the player on success.
+async function synthesize(device, voice, speed) {
+  const tts = await getTTS(device);
+
+  // Feed the exact on-screen token stream so highlighting aligns 1:1.
+  const plain = words.map(w => w.text).join(" ");
+  const totalTokens = words.length;
+
+  const splitter = new TextSplitterStream();
+  const stream = tts.stream(splitter, { voice, speed });
+  splitter.push(plain);
+  splitter.close();
+
+  const parts = [];         // Float32Array chunks
+  let sampleRate = 24000;
+  let totalSamples = 0;
+  let cursor = 0;           // next unassigned word index
+  const built = [];
+
+  setStatus('<span class="spin">◐</span> Synthesizing on ' + device.toUpperCase() + '…', "busy");
+  for await (const chunk of stream) {
+    const audio = chunk.audio;               // RawAudio: .audio Float32Array, .sampling_rate
+    const data = audio.audio;
+    sampleRate = audio.sampling_rate || sampleRate;
+    const nTok = tokenCount(chunk.text);
+    const wa = cursor;
+    const wb = Math.min(totalTokens - 1, cursor + Math.max(1, nTok) - 1);
+    cursor = wb + 1;
+    built.push({ startSample: totalSamples, endSample: totalSamples + data.length, wa, wb });
+    parts.push(data);
+    totalSamples += data.length;
+    barfill.style.width = Math.min(99, Math.round((cursor / totalTokens) * 100)) + "%";
+    setStatus('<span class="spin">◐</span> Synthesizing on ' + device.toUpperCase() + '… ' + Math.min(totalTokens, cursor).toLocaleString() + " / " + totalTokens.toLocaleString() + " words", "busy");
+  }
+
+  if (!parts.length || totalSamples === 0) throw new Error("no audio was produced");
+
+  // stitch audio
+  const all = new Float32Array(totalSamples);
+  let off = 0;
+  for (const p of parts) { all.set(p, off); off += p.length; }
+
+  // commit timing map + convert sample offsets to times (only now that we succeeded)
+  chunks = built;
+  for (const c of chunks) { c.startT = c.startSample / sampleRate; c.endT = c.endSample / sampleRate; }
+
+  const blob = encodeWav(all, sampleRate);
+  if (lastUrl) URL.revokeObjectURL(lastUrl);
+  lastUrl = URL.createObjectURL(blob);
+  player.src = lastUrl;
+  player.classList.remove("hidden");
+  download.href = lastUrl;
+  actions.classList.remove("hidden");
+  barfill.style.width = "100%";
+  setStatus("Done — " + (totalSamples / sampleRate).toFixed(1) + "s of audio (" + device.toUpperCase() + "). Press play to follow along.", "ok");
+  player.play().catch(() => {});
+}
+
 async function readAloud() {
   if (!words.length) { renderDoc(); }
   if (!words.length) { setStatus("Nothing to read — add some markdown.", "err"); return; }
@@ -353,61 +419,23 @@ async function readAloud() {
 
   const voice = voiceSel.value;
   const speed = Math.max(0.5, Math.min(2.0, parseFloat(speedInput.value) || 1.0));
+  const primary = chosenDevice();
 
   try {
-    const tts = await getTTS();
-
-    // Feed the exact on-screen token stream so highlighting aligns 1:1.
-    const plain = words.map(w => w.text).join(" ");
-    const totalTokens = words.length;
-
-    const splitter = new TextSplitterStream();
-    const stream = tts.stream(splitter, { voice, speed });
-    splitter.push(plain);
-    splitter.close();
-
-    const parts = [];         // Float32Array chunks
-    let sampleRate = 24000;
-    let totalSamples = 0;
-    let cursor = 0;           // next unassigned word index
-    chunks = [];
-
-    setStatus('<span class="spin">◐</span> Synthesizing…', "busy");
-    for await (const chunk of stream) {
-      const audio = chunk.audio;               // RawAudio: .audio Float32Array, .sampling_rate
-      const data = audio.audio;
-      sampleRate = audio.sampling_rate || sampleRate;
-      const nTok = tokenCount(chunk.text);
-      const wa = cursor;
-      const wb = Math.min(totalTokens - 1, cursor + Math.max(1, nTok) - 1);
-      cursor = wb + 1;
-      chunks.push({ startSample: totalSamples, endSample: totalSamples + data.length, wa, wb });
-      parts.push(data);
-      totalSamples += data.length;
-      barfill.style.width = Math.min(99, Math.round((cursor / totalTokens) * 100)) + "%";
-      setStatus('<span class="spin">◐</span> Synthesizing… ' + Math.min(totalTokens, cursor).toLocaleString() + " / " + totalTokens.toLocaleString() + " words", "busy");
+    try {
+      await synthesize(primary, voice, speed);
+    } catch (err) {
+      // Auto-recover from a broken WebGPU path (adapter present but unusable, etc.)
+      if (primary === "webgpu") {
+        console.warn("WebGPU synthesis failed, falling back to WASM:", err);
+        webgpuOK = false; describeBackend();
+        setStatus('<span class="spin">◐</span> WebGPU failed — retrying on WASM (CPU)…', "busy");
+        barfill.style.width = "0%";
+        await synthesize("wasm", voice, speed);
+      } else {
+        throw err;
+      }
     }
-
-    if (!parts.length || totalSamples === 0) { setStatus("No audio was produced.", "err"); return; }
-
-    // stitch audio
-    const all = new Float32Array(totalSamples);
-    let off = 0;
-    for (const p of parts) { all.set(p, off); off += p.length; }
-
-    // convert sample offsets to times
-    for (const c of chunks) { c.startT = c.startSample / sampleRate; c.endT = c.endSample / sampleRate; }
-
-    const blob = encodeWav(all, sampleRate);
-    if (lastUrl) URL.revokeObjectURL(lastUrl);
-    lastUrl = URL.createObjectURL(blob);
-    player.src = lastUrl;
-    player.classList.remove("hidden");
-    download.href = lastUrl;
-    actions.classList.remove("hidden");
-    barfill.style.width = "100%";
-    setStatus("Done — " + (totalSamples / sampleRate).toFixed(1) + "s of audio. Press play to follow along.", "ok");
-    player.play().catch(() => {});
   } catch (err) {
     console.error(err);
     setStatus("Failed: " + (err && err.message ? err.message : err), "err");
