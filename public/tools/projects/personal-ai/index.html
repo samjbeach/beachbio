@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hybrid Personal AI — architecture — BeachBio</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .lede { font-size: 15px; color: var(--ink); max-width: 68ch; line-height: 1.7; margin: 6px 0 8px; }
+  .lede b { color: var(--ink); }
+
+  /* principle cards */
+  .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 4px; }
+  @media (max-width: 760px) { .principles { grid-template-columns: 1fr; } }
+  .principle { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; border-left: 3px solid var(--cyan); }
+  .principle.gate { border-left-color: var(--accent); }
+  .principle .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .principle h3 { font-size: 14px; margin: 4px 0 5px; letter-spacing: -.01em; }
+  .principle p { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+
+  /* diagram */
+  .diagram { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
+  .plane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; }
+  .plane > .plabel { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .plane > .plabel .side { color: var(--muted); }
+  .nodes { display: flex; flex-wrap: wrap; gap: 10px; }
+  .node { flex: 1 1 200px; min-width: 180px; background: var(--field); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 12px; }
+  .node .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  .node .t { font-family: var(--mono); font-size: 13px; color: var(--ink); margin: 3px 0 4px; font-weight: 500; }
+  .node .d { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .node.local  { border-left-color: var(--cyan); }
+  .node.cloud  { border-left-color: var(--gold); }
+  .node.client { border-left-color: var(--muted); }
+  .node.data   { border-left-color: var(--rose); }
+  .node.gate   { border-left-color: var(--accent); }
+  .node.gate .t { color: var(--accent); }
+
+  .flowline { text-align: center; font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; color: var(--muted); padding: 9px 0; }
+  .flowline b { color: var(--accent); font-weight: 500; }
+  .flowline .arrow { display: block; color: var(--line); font-size: 15px; line-height: 1; margin-top: 2px; }
+
+  /* host grouping box */
+  .host { border: 1px dashed var(--inputbd); border-radius: 10px; padding: 11px; }
+  .host .hlabel { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin-bottom: 9px; }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 20px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* left-aligned prose tables */
+  .tablewrap { overflow-x: auto; margin-top: 10px; }
+  table.doc { font-size: 12.5px; }
+  table.doc th, table.doc td { text-align: left; vertical-align: top; }
+  table.doc td:first-child { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+  table.doc .route { font-family: var(--mono); font-size: 11px; }
+  table.doc .lo { color: var(--cyan); } table.doc .cl { color: var(--gold); } table.doc .hu { color: var(--accent); }
+
+  /* phased sequence */
+  .phases { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .phase { display: grid; grid-template-columns: 38px 1fr; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; }
+  .phase .n { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .phase h3 { font-size: 13.5px; margin: 0 0 4px; }
+  .phase p { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+  .phase .win { display: inline-block; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--ok); }
+
+  .backlink { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; margin-bottom: 16px; }
+  .backlink:hover { color: var(--ink); }
+  .meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a href="/tools/" class="backlink">← tools</a>
+
+  <p class="eyebrow">personal infrastructure · design note</p>
+  <h1>Hybrid personal AI — architecture</h1>
+  <p class="meta">unRAID home server · Cloudflare Tunnel + Access · cloud research, local reading</p>
+
+  <p class="lede">
+    One home server that turns research into something you can <b>read, keep, and trust</b>.
+    Heavy reasoning is rented from the cloud (OpenRouter); reading and curation run locally
+    (Kokoro, a small local model); and a knowledge base grows over time — but only through
+    changes <b>you approve</b>. Everything sits behind a single identity gate, reachable from
+    your phone or laptop without exposing anything raw to the internet.
+  </p>
+
+  <!-- ── principles ───────────────────────────────────────────────────────── -->
+  <h2>Load-bearing decisions</h2>
+  <div class="principles">
+    <div class="principle gate">
+      <div class="k">the guardrail</div>
+      <h3>The agent edits through pull requests, never live</h3>
+      <p>Every change the curation agent makes to the wiki is a commit on a branch → a PR you
+        merge. Diffable, revertable, and human-gated — the same branch→PR→merge rhythm the rest
+        of this site already runs. It's the antidote to a knowledge base quietly rotting.</p>
+    </div>
+    <div class="principle gate">
+      <div class="k">one front door</div>
+      <h3>Everything behind one tunnel + Access</h3>
+      <p>A single <code>cloudflared</code> tunnel publishes each service on its own subdomain,
+        all behind the same Cloudflare Access app. You log in once; machine-to-machine calls use
+        Access service tokens. Nothing is exposed directly to the internet.</p>
+    </div>
+    <div class="principle">
+      <div class="k">cloud vs local</div>
+      <h3>Rent reasoning, own the rest</h3>
+      <p>A dumb policy table routes each task: deep research → OpenRouter (capable, per-use);
+        summarize / curate / route → the local model (cheap, private, always-on); read aloud →
+        local Kokoro. Be honest that a small local model can't <em>do</em> the research — it
+        orchestrates.</p>
+    </div>
+    <div class="principle">
+      <div class="k">frontend for free</div>
+      <h3>The static site is the client</h3>
+      <p>This site (already behind Access) is the control surface: the dashboard kicks off runs
+        and browses reports; the Markdown reader tool just repoints at the local Kokoro endpoint
+        to gain real per-word timestamps and phone-speed synthesis.</p>
+    </div>
+    <div class="principle">
+      <div class="k">sequencing</div>
+      <h3>Build a spine, not a big bang</h3>
+      <p>Five services multiply failure modes. Stand up one capability at a time, each earning a
+        concrete win before the next. The reader-on-local-Kokoro step alone is worth doing on
+        its own.</p>
+    </div>
+    <div class="principle">
+      <div class="k">git as memory</div>
+      <h3>Reports and wiki are just repos</h3>
+      <p>Research reports and the wiki are markdown in git — rendered by the same static-site
+        muscle you already use. History <em>is</em> the audit log; a rollback is a revert.</p>
+    </div>
+  </div>
+
+  <!-- ── system diagram ───────────────────────────────────────────────────── -->
+  <h2>System</h2>
+  <div class="diagram">
+
+    <div class="plane">
+      <div class="plabel">clients <span class="side">· anywhere</span></div>
+      <div class="nodes">
+        <div class="node client"><div class="k">browser</div><div class="t">Phone / laptop</div><div class="d">Firefox, Chrome — no app to install.</div></div>
+        <div class="node client"><div class="k">frontend · beachbio.io</div><div class="t">Dashboard + Reader</div><div class="d">Kick off research, browse reports, play TTS with live highlighting.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline"><b>Cloudflare Access</b> — one login, your identity on every request<span class="arrow">↕</span></div>
+
+    <div class="plane">
+      <div class="plabel">cloudflare edge</div>
+      <div class="nodes">
+        <div class="node gate"><div class="k">zero trust</div><div class="t">Access</div><div class="d">Identity gate for people (OTP / SSO) and services (tokens).</div></div>
+        <div class="node local"><div class="k">ingress</div><div class="t">Tunnel</div><div class="d"><code>cloudflared</code> — outbound-only; no ports opened at home.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline"><span class="arrow">↕</span></div>
+
+    <div class="plane">
+      <div class="plabel">unraid host <span class="side">· your box, docker</span></div>
+      <div class="host">
+        <div class="hlabel">containers</div>
+        <div class="nodes">
+          <div class="node local"><div class="k">orchestration</div><div class="t">Router · n8n / FastAPI</div><div class="d">The brain. Applies the routing policy, schedules runs, retries, wires services together.</div></div>
+          <div class="node local"><div class="k">tts</div><div class="t">kokoro-fastapi</div><div class="d">Kokoro-82M with word-level timestamps (<code>/dev/captioned_speech</code>). CPU is fine.</div></div>
+          <div class="node local"><div class="k">local llm</div><div class="t">Ollama · Hermes</div><div class="d">Cheap, private, always-on work: summarizing, cross-linking, routing decisions.</div></div>
+          <div class="node local"><div class="k">render</div><div class="t">Wiki + reports renderer</div><div class="d">Serves the markdown repos as browsable pages (or hand off to the static site).</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flowline">deep-research calls leave the box → <b>OpenRouter</b><span class="arrow">↕</span></div>
+
+    <div class="plane">
+      <div class="plabel">external cloud <span class="side">· per-use</span></div>
+      <div class="nodes">
+        <div class="node cloud"><div class="k">llm gateway</div><div class="t">OpenRouter</div><div class="d">The capable models that actually do the deep research. Paid per token; keyed from the router, not the browser.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline"><span class="arrow">↕</span></div>
+
+    <div class="plane">
+      <div class="plabel">data plane <span class="side">· git = memory</span></div>
+      <div class="nodes">
+        <div class="node data"><div class="k">repo</div><div class="t">reports/</div><div class="d">Each research run lands as a markdown report — instantly available in the reader.</div></div>
+        <div class="node data"><div class="k">repo</div><div class="t">wiki/</div><div class="d">The curated knowledge base. The agent proposes edits as branches.</div></div>
+        <div class="node gate"><div class="k">human gate</div><div class="t">Your PR review</div><div class="d">You skim the diff and merge. Nothing enters the wiki you didn't approve.</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--muted)"></i> client</span>
+    <span><i style="background:var(--accent)"></i> control / human gate</span>
+    <span><i style="background:var(--cyan)"></i> local service</span>
+    <span><i style="background:var(--gold)"></i> cloud (per-use)</span>
+    <span><i style="background:var(--rose)"></i> data / git</span>
+  </div>
+
+  <!-- ── request flows ────────────────────────────────────────────────────── -->
+  <h2>What happens on a request</h2>
+  <div class="tablewrap">
+    <table class="doc">
+      <thead><tr><th>Flow</th><th>Path</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Research</td>
+          <td>Dashboard → Router → <span class="route cl">OpenRouter</span> → save <span class="route">reports/*.md</span></td>
+          <td>You ask a question; the router runs the deep-research prompt on a capable cloud model and commits the result as a report.</td>
+        </tr>
+        <tr>
+          <td>Read</td>
+          <td>Reader → <span class="route lo">kokoro-fastapi</span> → audio + word times → highlight</td>
+          <td>The report (or any markdown) is synthesized locally; per-word timestamps drive exact highlighting. Fast on any device.</td>
+        </tr>
+        <tr>
+          <td>Curate</td>
+          <td>Router → <span class="route lo">Ollama</span> → branch on <span class="route">wiki/</span> → <span class="route hu">your PR</span></td>
+          <td>A local pass cross-links the new report into the wiki, dedupes, fixes an index — and opens a PR for you to approve.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── components ───────────────────────────────────────────────────────── -->
+  <h2>Components</h2>
+  <div class="tablewrap">
+    <table class="doc">
+      <thead><tr><th>Piece</th><th>What it is</th><th>Where</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>cloudflared</td><td>Cloudflare Tunnel</td><td class="ro">unRAID</td><td>One tunnel, many subdomains; outbound-only, no port forwarding.</td></tr>
+        <tr><td>Access</td><td>Zero-Trust identity gate</td><td class="ro">Cloudflare</td><td>Same app already guarding <code>/tools/*</code>. Service tokens for machine calls.</td></tr>
+        <tr><td>Router</td><td>n8n or a small FastAPI app</td><td class="ro">unRAID</td><td>Policy + scheduling + retries. Start with n8n to skip glue code.</td></tr>
+        <tr><td>kokoro-fastapi</td><td>Kokoro-82M TTS server</td><td class="ro">unRAID</td><td>OpenAI-compatible speech + captioned endpoint with word timestamps.</td></tr>
+        <tr><td>Ollama</td><td>Local model runtime (Hermes)</td><td class="ro">unRAID</td><td>Curation, summarizing, routing. GPU optional; sizes the box's power draw.</td></tr>
+        <tr><td>OpenRouter</td><td>Cloud LLM gateway</td><td class="ro">external</td><td>The research heavy-lifting. Keyed server-side in the router.</td></tr>
+        <tr><td>reports / wiki</td><td>Markdown git repos</td><td class="ro">git</td><td>Memory + audit log. Rendered by the static site or a wiki container.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── routing policy ───────────────────────────────────────────────────── -->
+  <h2>Hybrid routing policy</h2>
+  <div class="tablewrap">
+    <table class="doc">
+      <thead><tr><th>Task</th><th>Route</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Deep research</td><td class="route cl">OpenRouter</td><td>Needs a capable model; worth paying per-use for quality you can't get locally.</td></tr>
+        <tr><td>Summarize / cross-link</td><td class="route lo">Ollama (local)</td><td>Cheap, private, runs constantly; small models are fine here.</td></tr>
+        <tr><td>Routing / classification</td><td class="route lo">Ollama (local)</td><td>Fast, no per-call cost, keeps the loop tight.</td></tr>
+        <tr><td>Read aloud</td><td class="route lo">Kokoro (local)</td><td>Real timestamps + phone speed; no data leaves the box.</td></tr>
+        <tr><td>Approve wiki change</td><td class="route hu">You (PR merge)</td><td>The one step that must stay human. Cheap insurance against drift.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── phased rollout ───────────────────────────────────────────────────── -->
+  <h2>The spine — build order</h2>
+  <div class="phases">
+    <div class="phase"><div class="n">1</div><div><h3>Local Kokoro, reachable everywhere</h3><p>unRAID + <code>cloudflared</code> + <code>kokoro-fastapi</code> behind Access. Repoint the Markdown reader tool at it.</p><span class="win">win → fast, timestamped reading on any device, one new container</span></div></div>
+    <div class="phase"><div class="n">2</div><div><h3>Generate a report</h3><p>A dashboard action → router → OpenRouter → commit <code>reports/*.md</code>. The new report simply shows up in the reader.</p><span class="win">win → research you can listen to, end to end</span></div></div>
+    <div class="phase"><div class="n">3</div><div><h3>Wiki + curation agent (via PRs)</h3><p>The curation pass cross-links reports into <code>wiki/</code>, opens a PR; you merge. Local model does the cheap work, OpenRouter the heavy.</p><span class="win">win → a knowledge base that grows safely</span></div></div>
+    <div class="phase"><div class="n">4</div><div><h3>Formalize the router</h3><p>Once you've felt the cloud-vs-local calls by hand, encode them: n8n policy, schedules, retries, budgets.</p><span class="win">win → it runs itself, on your terms</span></div></div>
+  </div>
+
+  <!-- ── cautions ─────────────────────────────────────────────────────────── -->
+  <h2>Honest cautions</h2>
+  <div class="note">
+    <b>Local models orchestrate; they don't research.</b> A 7–8B Hermes is great for routing and
+    summarizing and underwhelming at genuine deep research — keep that on OpenRouter and you
+    won't be disappointed.
+    <br><br>
+    <b>Always-on has a wattage.</b> A 24/7 box (especially with a GPU for local inference) is real,
+    recurring power draw versus OpenRouter's pay-per-use — the trade that matters more than it sounds.
+    <br><br>
+    <b>The agent-maintained wiki is the risky bit.</b> That's exactly why it's gated behind your PR
+    review. Resist the urge to let it merge its own changes "just for the small ones."
+    <br><br>
+    <b>Don't expose services raw.</b> Kokoro and Ollama should only ever be reachable through the
+    tunnel, behind Access — never a forwarded port.
+  </div>
+
+  <p class="hint">A design note, not a build. Sequence subject to change once the first container is
+    actually running and reality has opinions.</p>
+
+</div>
+
+<script src="/tools/nav.js"></script>
+</body>
+</html>

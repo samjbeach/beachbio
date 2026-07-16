@@ -34,6 +34,12 @@
       ],
     },
     {
+      heading: "projects",
+      tools: [
+        { label: "Personal AI — architecture", path: "/tools/projects/personal-ai/" },
+      ],
+    },
+    {
       heading: "reference",
       tools: [
         { label: "Style guide", path: "/tools/_template/" },
