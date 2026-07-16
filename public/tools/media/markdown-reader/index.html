@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown Reader (Kokoro TTS) — BeachBio</title>
+
+<!-- ── BeachBio tool head boilerplate ─────────────────────────────────────── -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* tool-specific styles */
+  textarea.md { width: 100%; min-height: 150px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+  .drop {
+    border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--accent); background: var(--inputbg); }
+
+  .backend { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 6px; }
+  .backend b { color: var(--cyan); }
+  .backend.wasm b { color: var(--gold); }
+
+  /* progress / status */
+  .status { font-family: var(--mono); font-size: 12px; margin-top: 4px; min-height: 1.2em; }
+  .status.busy { color: var(--cyan); }
+  .status.err  { color: var(--warn); }
+  .status.ok   { color: var(--ok); }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .bar { height: 4px; background: var(--field); border-radius: 3px; overflow: hidden; margin-top: 8px; display: none; }
+  .bar.show { display: block; }
+  .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .2s; }
+
+  /* playback controls */
+  .transport { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  audio { width: 100%; margin-top: 12px; }
+  .out-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .out-actions a.download {
+    display: inline-block; font-family: var(--mono); font-size: 12px;
+    color: var(--ink); text-decoration: none; padding: 9px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    transition: border-color .15s, background .15s;
+  }
+  .out-actions a.download:hover { border-color: var(--accent); background: var(--inputbg); }
+
+  /* rendered markdown reader + word highlighting */
+  .reader {
+    font-family: var(--sans); font-size: 15px; line-height: 1.75; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 22px 26px; margin-top: 4px; max-width: 70ch;
+  }
+  .reader:empty::before { content: "Rendered document appears here."; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  .reader h1, .reader h2, .reader h3 { font-family: var(--sans); line-height: 1.3; margin: 1.1em 0 .5em; }
+  .reader h1 { font-size: 1.5em; } .reader h2 { font-size: 1.28em; } .reader h3 { font-size: 1.1em; }
+  .reader p, .reader li { margin: .5em 0; }
+  .reader ul, .reader ol { padding-left: 1.4em; }
+  .reader code { font-family: var(--mono); font-size: .85em; background: var(--field); padding: 1px 5px; border-radius: 4px; }
+  .reader pre { background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+  .reader pre code { background: none; padding: 0; }
+  .reader blockquote { border-left: 3px solid var(--line); margin: .6em 0; padding-left: 14px; color: var(--muted); }
+  .reader a { color: var(--cyan); }
+  .reader table { margin: .6em 0; }
+
+  .w { border-radius: 3px; transition: background .08s, color .08s; }
+  .w.sent { background: color-mix(in srgb, var(--cyan) 16%, transparent); }
+  .w.active { background: var(--accent); color: #10201f; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a href="/tools/" class="back" style="display:inline-block;font-family:var(--mono);font-size:11px;color:var(--muted);text-decoration:none;margin-bottom:16px;">← tools</a>
+
+  <p class="eyebrow">media · text-to-speech · on-device</p>
+  <h1>Markdown Reader <span style="color:var(--faint);font-weight:400">(Kokoro)</span></h1>
+  <p class="sub">Renders a Markdown file and reads it aloud with the Kokoro TTS model
+    running <b>entirely in your browser</b> — no server, no API key. The current
+    sentence and word highlight along with the audio.</p>
+
+  <!-- ── 1. Voice + engine ────────────────────────────────────────────────── -->
+  <h2><span class="step">1</span>Voice</h2>
+  <div class="panel">
+    <div class="two">
+      <div class="field-row">
+        <label for="voice">Voice</label>
+        <select id="voice">
+          <optgroup label="American — female">
+            <option value="af_heart">af_heart (default)</option>
+            <option value="af_bella">af_bella</option>
+            <option value="af_nicole">af_nicole</option>
+            <option value="af_aoede">af_aoede</option>
+            <option value="af_kore">af_kore</option>
+            <option value="af_sarah">af_sarah</option>
+            <option value="af_nova">af_nova</option>
+            <option value="af_sky">af_sky</option>
+            <option value="af_alloy">af_alloy</option>
+            <option value="af_jessica">af_jessica</option>
+            <option value="af_river">af_river</option>
+          </optgroup>
+          <optgroup label="American — male">
+            <option value="am_michael">am_michael</option>
+            <option value="am_fenrir">am_fenrir</option>
+            <option value="am_puck">am_puck</option>
+            <option value="am_adam">am_adam</option>
+            <option value="am_echo">am_echo</option>
+            <option value="am_eric">am_eric</option>
+            <option value="am_liam">am_liam</option>
+            <option value="am_onyx">am_onyx</option>
+            <option value="am_santa">am_santa</option>
+          </optgroup>
+          <optgroup label="British — female">
+            <option value="bf_emma">bf_emma</option>
+            <option value="bf_alice">bf_alice</option>
+            <option value="bf_isabella">bf_isabella</option>
+            <option value="bf_lily">bf_lily</option>
+          </optgroup>
+          <optgroup label="British — male">
+            <option value="bm_george">bm_george</option>
+            <option value="bm_daniel">bm_daniel</option>
+            <option value="bm_fable">bm_fable</option>
+            <option value="bm_lewis">bm_lewis</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field-row">
+        <label for="speed">Speed <span class="unit">×</span></label>
+        <input type="number" id="speed" value="1.0" min="0.5" max="2.0" step="0.1">
+      </div>
+    </div>
+    <div class="field-row" style="margin-top:2px">
+      <label for="device">Backend</label>
+      <select id="device">
+        <option value="auto">Auto — WebGPU if available, else WASM (recommended)</option>
+        <option value="webgpu">WebGPU (fast, ~330 MB download)</option>
+        <option value="wasm">WASM / CPU (smaller ~86 MB, works everywhere)</option>
+      </select>
+    </div>
+    <div class="backend" id="backend">Detecting rendering backend…</div>
+    <p class="hint">First use downloads the Kokoro model once, then it's cached by the
+      browser (~86&nbsp;MB on WASM, ~330&nbsp;MB on WebGPU). Everything after that runs
+      offline on your device.</p>
+  </div>
+
+  <!-- ── 2. Markdown input ────────────────────────────────────────────────── -->
+  <h2><span class="step">2</span>Document</h2>
+  <div class="panel">
+    <div class="drop" id="drop">
+      <span>Drop a .md/.txt file here, or</span>
+      <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain">
+    </div>
+    <div class="field-row" style="margin-top:12px">
+      <label for="md">Markdown source</label>
+      <textarea id="md" class="md" placeholder="# Heading&#10;&#10;Paste your markdown here, then press Render…"></textarea>
+    </div>
+    <div class="rowbtns">
+      <button class="preset" id="render">Render</button>
+      <button class="preset primary" id="read">Read aloud</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="bar" id="bar"><i id="barfill"></i></div>
+  </div>
+
+  <!-- ── 3. Reader + playback ─────────────────────────────────────────────── -->
+  <h2><span class="step">3</span>Reader</h2>
+  <div class="panel">
+    <div class="reader" id="reader"></div>
+    <audio id="player" controls class="hidden"></audio>
+    <div class="out-actions hidden" id="actions">
+      <a class="download" id="download" download="reading.wav">↓ download WAV</a>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Runs on your device.</b> The Kokoro model is downloaded from Hugging Face on
+    first use and cached; synthesis then happens locally — the text never leaves the
+    browser. <b>Firefox / Windows</b> uses WebGPU (fast). <b>Firefox / Android</b> has
+    no WebGPU yet, so it falls back to WASM (CPU): it works and sounds identical, but
+    is slower — read a section at a time rather than a huge document. Highlighting is
+    exact at the sentence level; the per-word position within a sentence is estimated
+    from that sentence's duration.
+  </div>
+
+</div>
+
+<script type="module">
+import { KokoroTTS, TextSplitterStream } from "https://cdn.jsdelivr.net/npm/kokoro-js@1/+esm";
+import { marked } from "https://cdn.jsdelivr.net/npm/marked/+esm";
+
+const $ = (id) => document.getElementById(id);
+const mdEl = $("md"), fileInput = $("file"), drop = $("drop"), readerEl = $("reader"),
+      renderBtn = $("render"), readBtn = $("read"), statusEl = $("status"),
+      bar = $("bar"), barfill = $("barfill"), player = $("player"),
+      actions = $("actions"), download = $("download"), backendEl = $("backend"),
+      voiceSel = $("voice"), speedInput = $("speed"), deviceSel = $("device");
+
+const LS = { md: "mdreader.md", voice: "mdreader.voice", speed: "mdreader.speed", device: "mdreader.device" };
+try {
+  if (localStorage.getItem(LS.md))     mdEl.value       = localStorage.getItem(LS.md);
+  if (localStorage.getItem(LS.voice))  voiceSel.value   = localStorage.getItem(LS.voice);
+  if (localStorage.getItem(LS.speed))  speedInput.value = localStorage.getItem(LS.speed);
+  if (localStorage.getItem(LS.device)) deviceSel.value  = localStorage.getItem(LS.device);
+} catch (e) {}
+const persist = () => { try {
+  localStorage.setItem(LS.md, mdEl.value);
+  localStorage.setItem(LS.voice, voiceSel.value);
+  localStorage.setItem(LS.speed, speedInput.value);
+  localStorage.setItem(LS.device, deviceSel.value);
+} catch (e) {} };
+[mdEl, speedInput].forEach(el => el.addEventListener("input", persist));
+[voiceSel, deviceSel].forEach(el => el.addEventListener("change", persist));
+
+// ── backend detection ────────────────────────────────────────────────────
+const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu;
+// the device that will actually be used, honouring the selector
+function chosenDevice() {
+  if (deviceSel.value === "webgpu") return "webgpu";
+  if (deviceSel.value === "wasm")   return "wasm";
+  return hasWebGPU ? "webgpu" : "wasm"; // auto
+}
+function describeBackend() {
+  const d = chosenDevice();
+  if (d === "webgpu") { backendEl.classList.remove("wasm"); backendEl.innerHTML = "Will use <b>WebGPU</b> (GPU-accelerated)" + (hasWebGPU ? "." : " — <b>not detected in this browser</b>; it may fail and fall back to WASM."); }
+  else { backendEl.classList.add("wasm"); backendEl.innerHTML = "Will use <b>WASM (CPU)</b>" + (hasWebGPU ? " by choice." : " — no WebGPU in this browser; synthesis will be slower."); }
+}
+deviceSel.addEventListener("change", describeBackend);
+describeBackend();
+
+function setStatus(msg, kind) {
+  statusEl.className = "status" + (kind ? " " + kind : "");
+  statusEl.innerHTML = msg;
+}
+
+// ── render markdown & wrap each visible word in a span ─────────────────────
+let words = [];   // [{ span, text }]
+function renderDoc() {
+  const src = mdEl.value;
+  readerEl.innerHTML = marked.parse(src || "");
+  words = [];
+  // collect eligible text nodes (skip code/pre so we don't read code aloud)
+  const walker = document.createTreeWalker(readerEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      if (n.parentElement && n.parentElement.closest("pre, code")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+
+  for (const node of nodes) {
+    const parts = node.nodeValue.split(/(\s+)/); // keep whitespace tokens
+    const frag = document.createDocumentFragment();
+    for (const part of parts) {
+      if (part === "" || /^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); continue; }
+      const span = document.createElement("span");
+      span.className = "w";
+      span.dataset.i = String(words.length);
+      span.textContent = part;
+      frag.appendChild(span);
+      words.push({ span, text: part });
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+  // reset any previous audio
+  clearHighlight();
+  player.classList.add("hidden");
+  actions.classList.add("hidden");
+  return words.length;
+}
+
+renderBtn.addEventListener("click", () => {
+  const n = renderDoc();
+  setStatus(n ? (n.toLocaleString() + " words rendered. Press “Read aloud”.") : "Nothing to render.", n ? "ok" : "err");
+});
+
+// ── file / drag-drop loading ───────────────────────────────────────────────
+function loadFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { mdEl.value = reader.result; persist(); renderDoc(); setStatus("Loaded " + file.name + ". Press “Read aloud”.", "ok"); };
+  reader.readAsText(file);
+}
+fileInput.addEventListener("change", () => loadFile(fileInput.files[0]));
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+
+// ── model (lazy singleton, keyed by device so switching backend reloads) ────
+const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const dtypeFor = (device) => device === "webgpu" ? "fp32" : "q8"; // fp32 is the known-good WebGPU path; q8 is small + reliable on WASM
+let ttsPromise = null, ttsDevice = null;
+function getTTS() {
+  const device = chosenDevice();
+  if (ttsPromise && ttsDevice === device) return ttsPromise;
+  ttsDevice = device;
+  setStatus('<span class="spin">◐</span> Loading Kokoro model on ' + device.toUpperCase() + ' (first run downloads the weights)…', "busy");
+  ttsPromise = KokoroTTS.from_pretrained(MODEL_ID, { dtype: dtypeFor(device), device })
+    .catch(async (err) => {
+      if (device === "webgpu") {           // fall back to WASM if WebGPU init fails
+        console.warn("WebGPU init failed, falling back to WASM:", err);
+        setStatus('<span class="spin">◐</span> WebGPU failed — retrying on WASM…', "busy");
+        ttsDevice = "wasm";
+        return KokoroTTS.from_pretrained(MODEL_ID, { dtype: dtypeFor("wasm"), device: "wasm" });
+      }
+      throw err;
+    });
+  return ttsPromise;
+}
+
+// ── WAV assembly from Float32 chunks ───────────────────────────────────────
+function encodeWav(float32, sampleRate) {
+  const n = float32.length;
+  const buf = new ArrayBuffer(44 + n * 2);
+  const dv = new DataView(buf);
+  const wr = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  wr(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); wr(8, "WAVE");
+  wr(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true); dv.setUint32(24, sampleRate, true);
+  dv.setUint32(28, sampleRate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  wr(36, "data"); dv.setUint32(40, n * 2, true);
+  let o = 44;
+  for (let i = 0; i < n; i++) {
+    let s = Math.max(-1, Math.min(1, float32[i]));
+    dv.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2;
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+// ── timing map: which word spans belong to each sentence chunk ─────────────
+let chunks = [];      // [{ startT, endT, wa, wb }]  wa..wb inclusive word indices
+let lastUrl = null;
+
+function tokenCount(text) {
+  const m = text.match(/\S+/g);
+  return m ? m.length : 0;
+}
+
+async function readAloud() {
+  if (!words.length) { renderDoc(); }
+  if (!words.length) { setStatus("Nothing to read — add some markdown.", "err"); return; }
+
+  readBtn.disabled = true; renderBtn.disabled = true;
+  clearHighlight();
+  player.classList.add("hidden"); actions.classList.add("hidden");
+  bar.classList.add("show"); barfill.style.width = "0%";
+
+  const voice = voiceSel.value;
+  const speed = Math.max(0.5, Math.min(2.0, parseFloat(speedInput.value) || 1.0));
+
+  try {
+    const tts = await getTTS();
+
+    // Feed the exact on-screen token stream so highlighting aligns 1:1.
+    const plain = words.map(w => w.text).join(" ");
+    const totalTokens = words.length;
+
+    const splitter = new TextSplitterStream();
+    const stream = tts.stream(splitter, { voice, speed });
+    splitter.push(plain);
+    splitter.close();
+
+    const parts = [];         // Float32Array chunks
+    let sampleRate = 24000;
+    let totalSamples = 0;
+    let cursor = 0;           // next unassigned word index
+    chunks = [];
+
+    setStatus('<span class="spin">◐</span> Synthesizing…', "busy");
+    for await (const chunk of stream) {
+      const audio = chunk.audio;               // RawAudio: .audio Float32Array, .sampling_rate
+      const data = audio.audio;
+      sampleRate = audio.sampling_rate || sampleRate;
+      const nTok = tokenCount(chunk.text);
+      const wa = cursor;
+      const wb = Math.min(totalTokens - 1, cursor + Math.max(1, nTok) - 1);
+      cursor = wb + 1;
+      chunks.push({ startSample: totalSamples, endSample: totalSamples + data.length, wa, wb });
+      parts.push(data);
+      totalSamples += data.length;
+      barfill.style.width = Math.min(99, Math.round((cursor / totalTokens) * 100)) + "%";
+      setStatus('<span class="spin">◐</span> Synthesizing… ' + Math.min(totalTokens, cursor).toLocaleString() + " / " + totalTokens.toLocaleString() + " words", "busy");
+    }
+
+    if (!parts.length || totalSamples === 0) { setStatus("No audio was produced.", "err"); return; }
+
+    // stitch audio
+    const all = new Float32Array(totalSamples);
+    let off = 0;
+    for (const p of parts) { all.set(p, off); off += p.length; }
+
+    // convert sample offsets to times
+    for (const c of chunks) { c.startT = c.startSample / sampleRate; c.endT = c.endSample / sampleRate; }
+
+    const blob = encodeWav(all, sampleRate);
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+    player.src = lastUrl;
+    player.classList.remove("hidden");
+    download.href = lastUrl;
+    actions.classList.remove("hidden");
+    barfill.style.width = "100%";
+    setStatus("Done — " + (totalSamples / sampleRate).toFixed(1) + "s of audio. Press play to follow along.", "ok");
+    player.play().catch(() => {});
+  } catch (err) {
+    console.error(err);
+    setStatus("Failed: " + (err && err.message ? err.message : err), "err");
+  } finally {
+    readBtn.disabled = false; renderBtn.disabled = false;
+    setTimeout(() => bar.classList.remove("show"), 800);
+  }
+}
+readBtn.addEventListener("click", readAloud);
+
+// ── highlight driver (follows audio playback) ──────────────────────────────
+let curSentIdx = -1, curWordIdx = -1, rafId = null;
+
+function clearHighlight() {
+  if (curSentIdx >= 0 && chunks[curSentIdx]) {
+    for (let i = chunks[curSentIdx].wa; i <= chunks[curSentIdx].wb; i++) words[i] && words[i].span.classList.remove("sent");
+  }
+  if (curWordIdx >= 0 && words[curWordIdx]) words[curWordIdx].span.classList.remove("active");
+  curSentIdx = -1; curWordIdx = -1;
+}
+
+function highlightAt(t) {
+  // find sentence chunk containing t
+  let si = -1;
+  for (let i = 0; i < chunks.length; i++) { if (t >= chunks[i].startT && t < chunks[i].endT) { si = i; break; } }
+  if (si === -1) return;
+
+  if (si !== curSentIdx) {
+    if (curSentIdx >= 0 && chunks[curSentIdx]) for (let i = chunks[curSentIdx].wa; i <= chunks[curSentIdx].wb; i++) words[i] && words[i].span.classList.remove("sent");
+    for (let i = chunks[si].wa; i <= chunks[si].wb; i++) words[i] && words[i].span.classList.add("sent");
+    curSentIdx = si;
+  }
+
+  // estimate active word within the sentence by proportional (length-weighted) time
+  const c = chunks[si];
+  const frac = (t - c.startT) / Math.max(1e-6, (c.endT - c.startT));
+  let weights = 0; for (let i = c.wa; i <= c.wb; i++) weights += (words[i] ? words[i].text.length : 1);
+  let acc = 0, wi = c.wa;
+  for (let i = c.wa; i <= c.wb; i++) {
+    const w = (words[i] ? words[i].text.length : 1) / Math.max(1, weights);
+    if (frac <= acc + w) { wi = i; break; }
+    acc += w; wi = i;
+  }
+  if (wi !== curWordIdx) {
+    if (curWordIdx >= 0 && words[curWordIdx]) words[curWordIdx].span.classList.remove("active");
+    if (words[wi]) { words[wi].span.classList.add("active"); words[wi].span.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    curWordIdx = wi;
+  }
+}
+
+function tick() {
+  if (!player.paused && !player.ended) highlightAt(player.currentTime);
+  rafId = requestAnimationFrame(tick);
+}
+player.addEventListener("play", () => { if (!rafId) tick(); });
+player.addEventListener("timeupdate", () => highlightAt(player.currentTime));
+player.addEventListener("seeking", () => highlightAt(player.currentTime));
+player.addEventListener("pause", () => { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } });
+player.addEventListener("ended", () => { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } });
+
+// render whatever is already in the box on load
+if (mdEl.value.trim()) renderDoc();
+</script>
+
+<!-- ── Sidebar nav ────────────────────────────────────────────────────────── -->
+<script src="/tools/nav.js"></script>
+</body>
+</html>

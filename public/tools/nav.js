@@ -29,7 +29,8 @@
     {
       heading: "media",
       tools: [
-        { label: "Markdown → TTS", path: "/tools/media/markdown-tts/" },
+        { label: "Markdown → TTS",        path: "/tools/media/markdown-tts/" },
+        { label: "Markdown reader (Kokoro)", path: "/tools/media/markdown-reader/" },
       ],
     },
     {
