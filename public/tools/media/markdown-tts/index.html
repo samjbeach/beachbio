@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown → TTS — BeachBio</title>
+
+<!-- ── BeachBio tool head boilerplate ─────────────────────────────────────── -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* tool-specific styles */
+  textarea.md { width: 100%; min-height: 220px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
+  .drop {
+    border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--accent); background: var(--inputbg); }
+  .charcount { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 4px; }
+  .charcount.warn { color: var(--warn); }
+  audio { width: 100%; margin-top: 12px; }
+  .out-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .out-actions a.download {
+    display: inline-block; font-family: var(--mono); font-size: 12px;
+    color: var(--ink); text-decoration: none; padding: 9px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    transition: border-color .15s, background .15s;
+  }
+  .out-actions a.download:hover { border-color: var(--accent); background: var(--inputbg); }
+  .status { font-family: var(--mono); font-size: 12px; margin-top: 12px; }
+  .status.busy { color: var(--cyan); }
+  .status.err  { color: var(--warn); }
+  .status.ok   { color: var(--ok); }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .key-note { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a href="/tools/" class="back" style="display:inline-block;font-family:var(--mono);font-size:11px;color:var(--muted);text-decoration:none;margin-bottom:16px;">← tools</a>
+
+  <p class="eyebrow">media · text-to-speech</p>
+  <h1>Markdown → TTS</h1>
+  <p class="sub">Paste (or drop) a Markdown file, pick a voice, and generate speech
+    through the OpenRouter audio API. Play it in the browser or download the MP3.</p>
+
+  <!-- ── 1. API + model settings ──────────────────────────────────────────── -->
+  <h2><span class="step">1</span>OpenRouter settings</h2>
+  <div class="panel">
+    <div class="field-row">
+      <label for="apikey">OpenRouter API key</label>
+      <input type="password" id="apikey" placeholder="sk-or-v1-…" autocomplete="off" spellcheck="false">
+      <p class="key-note">Stored only in this browser's localStorage — never uploaded anywhere but OpenRouter.
+        See the note at the bottom on why a GitHub secret can't be used here.</p>
+    </div>
+    <div class="two">
+      <div class="field-row">
+        <label for="model">TTS model</label>
+        <input type="text" id="model" value="openai/gpt-4o-mini-tts" spellcheck="false">
+      </div>
+      <div class="field-row">
+        <label for="voice">Voice</label>
+        <input type="text" id="voice" value="alloy" spellcheck="false">
+      </div>
+    </div>
+    <label class="toggle" style="margin-top:10px">
+      <input type="checkbox" id="strip" checked> strip Markdown syntax before reading (recommended)
+    </label>
+    <p class="hint">Model names come from the
+      <a href="https://openrouter.ai/collections/text-to-speech-models" target="_blank" rel="noopener" style="color:var(--cyan)">OpenRouter TTS collection</a>.
+      The <code>voice</code> field is used by voice-capable models (e.g. OpenAI: alloy, echo, fable, onyx, nova, shimmer) and ignored by others.</p>
+  </div>
+
+  <!-- ── 2. Markdown input ────────────────────────────────────────────────── -->
+  <h2><span class="step">2</span>Markdown</h2>
+  <div class="panel">
+    <div class="drop" id="drop">
+      <span>Drop a .md/.txt file here, or</span>
+      <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain">
+    </div>
+    <div class="field-row" style="margin-top:12px">
+      <label for="md">Text</label>
+      <textarea id="md" class="md" placeholder="# Heading&#10;&#10;Paste your markdown here…"></textarea>
+    </div>
+    <div class="charcount" id="charcount">0 characters</div>
+    <div class="rowbtns">
+      <button class="preset primary" id="go">Generate speech</button>
+    </div>
+  </div>
+
+  <!-- ── 3. Output ────────────────────────────────────────────────────────── -->
+  <h2><span class="step">3</span>Audio</h2>
+  <div class="panel">
+    <div class="status" id="status">Nothing generated yet.</div>
+    <audio id="player" controls hidden></audio>
+    <div class="out-actions" id="actions" hidden>
+      <a class="download" id="download" download="speech.mp3">↓ download MP3</a>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>How the key is handled.</b> This is a static site with no server, so a
+    <b>GitHub Actions secret can't be read by the page</b> — those secrets only exist
+    during CI builds, never in the browser. Instead the key is entered here and kept in
+    your browser's localStorage. That's fine because <code>/tools/*</code> is already
+    behind Cloudflare Access (only you can reach it). The request goes straight from your
+    browser to OpenRouter over HTTPS.
+    <br><br>
+    <b>Length limits.</b> Most TTS models cap input at a few thousand characters
+    (OpenAI ≈ 4096). Very long documents may be rejected — split them if a request fails.
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const md = $("md"), fileInput = $("file"), drop = $("drop"),
+        charcount = $("charcount"), statusEl = $("status"),
+        player = $("player"), actions = $("actions"), download = $("download"),
+        goBtn = $("go"), keyInput = $("apikey"), modelInput = $("model"),
+        voiceInput = $("voice"), stripInput = $("strip");
+
+  const LS = {
+    key: "mdtts.apikey", model: "mdtts.model",
+    voice: "mdtts.voice", strip: "mdtts.strip",
+  };
+
+  // ── persistence ──────────────────────────────────────────────────────────
+  try {
+    if (localStorage.getItem(LS.key))   keyInput.value   = localStorage.getItem(LS.key);
+    if (localStorage.getItem(LS.model)) modelInput.value = localStorage.getItem(LS.model);
+    if (localStorage.getItem(LS.voice)) voiceInput.value = localStorage.getItem(LS.voice);
+    if (localStorage.getItem(LS.strip) !== null) stripInput.checked = localStorage.getItem(LS.strip) === "1";
+  } catch (e) { /* localStorage may be unavailable */ }
+
+  const persist = () => {
+    try {
+      localStorage.setItem(LS.key,   keyInput.value.trim());
+      localStorage.setItem(LS.model, modelInput.value.trim());
+      localStorage.setItem(LS.voice, voiceInput.value.trim());
+      localStorage.setItem(LS.strip, stripInput.checked ? "1" : "0");
+    } catch (e) {}
+  };
+  [keyInput, modelInput, voiceInput].forEach(el => el.addEventListener("input", persist));
+  stripInput.addEventListener("change", persist);
+
+  // ── lightweight markdown → plain text ─────────────────────────────────────
+  function stripMarkdown(src) {
+    let t = src;
+    t = t.replace(/```[\s\S]*?```/g, " ");            // fenced code blocks
+    t = t.replace(/`([^`]+)`/g, "$1");                // inline code
+    t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");   // images → alt text
+    t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");    // links → link text
+    t = t.replace(/^\s{0,3}#{1,6}\s+/gm, "");         // ATX headings
+    t = t.replace(/^\s{0,3}>\s?/gm, "");              // blockquotes
+    t = t.replace(/^\s{0,3}([-*+])\s+/gm, "");        // bullet list markers
+    t = t.replace(/^\s{0,3}\d+\.\s+/gm, "");          // ordered list markers
+    t = t.replace(/^\s{0,3}([-*_])\s*(?:\1\s*){2,}$/gm, ""); // horizontal rules
+    t = t.replace(/(\*\*|__)(.*?)\1/g, "$2");         // bold
+    t = t.replace(/(\*|_)(.*?)\1/g, "$2");            // italics
+    t = t.replace(/~~(.*?)~~/g, "$1");                // strikethrough
+    t = t.replace(/\|/g, " ");                        // table pipes
+    t = t.replace(/\n{3,}/g, "\n\n");                 // collapse blank runs
+    return t.trim();
+  }
+
+  // ── char count ────────────────────────────────────────────────────────────
+  function updateCount() {
+    const n = md.value.length;
+    charcount.textContent = n.toLocaleString() + " characters";
+    charcount.classList.toggle("warn", n > 4096);
+  }
+  md.addEventListener("input", updateCount);
+
+  // ── file loading (input + drag/drop) ──────────────────────────────────────
+  function loadFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { md.value = reader.result; updateCount(); };
+    reader.readAsText(file);
+  }
+  fileInput.addEventListener("change", () => loadFile(fileInput.files[0]));
+  ["dragenter", "dragover"].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e => {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+
+  // ── status helper ──────────────────────────────────────────────────────────
+  function setStatus(msg, kind) {
+    statusEl.className = "status" + (kind ? " " + kind : "");
+    statusEl.innerHTML = msg;
+  }
+
+  let lastUrl = null;
+
+  // ── generate ────────────────────────────────────────────────────────────────
+  async function generate() {
+    const key = keyInput.value.trim();
+    const model = modelInput.value.trim();
+    const voice = voiceInput.value.trim();
+    const raw = md.value;
+
+    if (!key)   { setStatus("Enter your OpenRouter API key first.", "err"); return; }
+    if (!model) { setStatus("Enter a TTS model.", "err"); return; }
+    if (!raw.trim()) { setStatus("Nothing to read — paste or drop some markdown.", "err"); return; }
+
+    const input = stripInput.checked ? stripMarkdown(raw) : raw;
+    if (!input.trim()) { setStatus("After stripping markdown there's no text to read.", "err"); return; }
+
+    goBtn.disabled = true;
+    setStatus('<span class="spin">◐</span> Generating…', "busy");
+    player.hidden = true; actions.hidden = true;
+
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model,
+          input: input,
+          voice: voice || undefined,
+          response_format: "mp3",
+        }),
+      });
+
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const j = await res.json();
+          detail = j.error && j.error.message ? j.error.message : JSON.stringify(j);
+        } catch (e) {
+          try { detail = await res.text(); } catch (e2) {}
+        }
+        setStatus("OpenRouter error " + res.status + ": " + (detail || res.statusText), "err");
+        return;
+      }
+
+      const blob = await res.blob();
+      if (blob.size === 0) { setStatus("Got an empty audio response.", "err"); return; }
+
+      if (lastUrl) URL.revokeObjectURL(lastUrl);
+      lastUrl = URL.createObjectURL(blob);
+      player.src = lastUrl;
+      player.hidden = false;
+      download.href = lastUrl;
+      actions.hidden = false;
+      setStatus("Done — " + Math.round(blob.size / 1024).toLocaleString() + " KB.", "ok");
+      player.play().catch(() => {});
+    } catch (err) {
+      setStatus("Request failed: " + (err && err.message ? err.message : err) +
+                " (check the key, model name, and your connection).", "err");
+    } finally {
+      goBtn.disabled = false;
+    }
+  }
+
+  goBtn.addEventListener("click", generate);
+  updateCount();
+})();
+</script>
+
+<!-- ── Sidebar nav ────────────────────────────────────────────────────────── -->
+<script src="/tools/nav.js"></script>
+</body>
+</html>

@@ -27,6 +27,12 @@
       ],
     },
     {
+      heading: "media",
+      tools: [
+        { label: "Markdown → TTS", path: "/tools/media/markdown-tts/" },
+      ],
+    },
+    {
       heading: "reference",
       tools: [
         { label: "Style guide", path: "/tools/_template/" },
