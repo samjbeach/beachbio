@@ -3,50 +3,700 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — Sam Beach</title>
+  <title>Research — Sam Beach</title>
 
+  <!-- shared BeachBio design system (dark teal theme) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+
+  <!--
+    Preact + htm, buildless. Pinned CDN + import map = plain vanilla-ish DX with
+    real components and no toolchain. This is the "graduate from Alpine" tier:
+    when a page is app-shaped (shared state, many widgets) we reach for this;
+    simple pages keep using vanilla / Alpine sprinkles. Swap the CDN for a
+    vendored copy under /vendor/ later if we want zero third-party requests.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "preact":        "https://esm.sh/preact@10.25.4",
+      "preact/hooks":  "https://esm.sh/preact@10.25.4/hooks",
+      "htm/preact":    "https://esm.sh/htm@3.1.1/preact?deps=preact@10.25.4"
+    }
+  }
+  </script>
+
   <style>
-    body {
+    /* ── dashboard is a full-bleed app shell (override the global body pad) ── */
+    body { padding: 0; min-height: 100dvh; }
+
+    /* DESKTOP-FIRST: base rules target a wide screen; media queries below
+       collapse toward mobile. */
+    .app {
+      display: grid;
+      grid-template-columns: 236px 1fr;
       min-height: 100dvh;
+    }
+
+    /* ── sidebar ──────────────────────────────────────────────────────────── */
+    .sidebar {
+      background: var(--field);
+      border-right: 1px solid var(--line);
+      padding: 18px 14px;
       display: flex;
       flex-direction: column;
+      gap: 22px;
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      overflow-y: auto;
     }
-    .home {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      gap: 18px;
-      padding: 48px 0;
+    .brand { display: flex; align-items: baseline; gap: 8px; }
+    .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display: inline-block; }
+    .brand b { font-size: 15px; letter-spacing: -.01em; }
+    .brand .env { font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); }
+
+    .navgroup { display: flex; flex-direction: column; gap: 2px; }
+    .navgroup .glabel { font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px 8px; }
+    .navitem {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 13px; color: var(--muted);
+      padding: 7px 9px; border-radius: 7px;
+      border: 1px solid transparent;
+      cursor: pointer; text-align: left; background: none; width: 100%;
+      transition: background .12s, color .12s, border-color .12s;
     }
-    .home h1 { font-size: 34px; }
-    .home .back {
-      font-family: var(--mono);
-      font-size: 12px;
-      letter-spacing: .04em;
-      color: var(--muted);
-      text-decoration: none;
-      padding: 9px 18px;
-      border: 1px solid var(--inputbd);
-      border-radius: 7px;
-      background: var(--inputbg);
-      transition: border-color .15s, color .15s;
+    .navitem:hover { color: var(--ink); background: var(--panel); }
+    .navitem.active { color: var(--ink); background: var(--panel); border-color: var(--line); }
+    .navitem .ic { width: 16px; text-align: center; opacity: .85; }
+    .navitem .badge { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--accent); }
+
+    .svcs { margin-top: auto; display: flex; flex-direction: column; gap: 7px; }
+    .svc { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+    .svc .led { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+    .led.ok   { background: var(--ok); box-shadow: 0 0 6px rgba(111,191,154,.7); }
+    .led.warn { background: var(--gold); box-shadow: 0 0 6px rgba(224,164,92,.6); }
+    .led.idle { background: var(--faint); }
+    .svc .meta { margin-left: auto; color: var(--faint); }
+
+    /* ── main column ──────────────────────────────────────────────────────── */
+    .main { display: flex; flex-direction: column; min-width: 0; }
+    .topbar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 5;
+      background: color-mix(in srgb, var(--ground) 88%, transparent);
+      backdrop-filter: blur(8px);
     }
-    .home .back:hover { border-color: var(--accent); color: var(--ink); }
+    .topbar h1 { font-size: 18px; }
+    .topbar .crumb { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .04em; }
+    .tabs { margin-left: 8px; display: flex; gap: 4px; }
+    .tab {
+      font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em;
+      color: var(--muted); background: none; border: 1px solid transparent;
+      padding: 6px 12px; border-radius: 7px; cursor: pointer;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active { color: var(--ink); background: var(--panel); border-color: var(--line); }
+    .topbar .spacer { flex: 1; }
+    .topbar .clock { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+    .viewwrap { padding: 20px 24px 40px; }
+
+    /* ── widget grid (12-col, desktop-first, dense packing) ───────────────── */
+    .wgrid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      grid-auto-flow: row dense;
+      gap: 16px;
+    }
+    .widget {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      display: flex; flex-direction: column;
+      min-width: 0; overflow: hidden;
+    }
+    .whead {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border-bottom: 1px solid var(--line);
+    }
+    .whead .wt { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+    .whead .wic { color: var(--faint); }
+    .whead .wactions { margin-left: auto; display: flex; gap: 6px; }
+    .whead .wactions button { padding: 4px 8px; font-size: 11px; }
+    .wbody { padding: 14px; flex: 1; min-height: 0; }
+
+    /* span helpers */
+    .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; }
+    .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+
+    /* ── chat widget ──────────────────────────────────────────────────────── */
+    .chatlog { display: flex; flex-direction: column; gap: 10px; height: 300px; overflow-y: auto; padding-right: 4px; }
+    .msg { max-width: 86%; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.55; }
+    .msg.user { align-self: flex-end; background: var(--inputbg); border: 1px solid var(--inputbd); }
+    .msg.bot  { align-self: flex-start; background: var(--field); border: 1px solid var(--line); color: var(--ink); }
+    .msg .who { font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); display: block; margin-bottom: 4px; }
+    .msg.bot .who { color: var(--cyan); }
+    .chatform { display: flex; gap: 8px; margin-top: 12px; }
+    .chatform input { flex: 1; }
+    .modelrow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .modelrow select { font-size: 12px; padding: 5px 8px; }
+    .caret { display: inline-block; width: 7px; background: var(--cyan); margin-left: 1px; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 0%,50% { opacity: 1 } 50.01%,100% { opacity: 0 } }
+
+    /* ── feed / kb lists ──────────────────────────────────────────────────── */
+    .list { display: flex; flex-direction: column; gap: 0; max-height: 300px; overflow-y: auto; }
+    .row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 2px; border-bottom: 1px solid rgba(35,75,79,.5);
+    }
+    .row:last-child { border-bottom: none; }
+    .row .rk { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); flex: none; width: 46px; padding-top: 2px; }
+    .row .rt { font-size: 13px; color: var(--ink); line-height: 1.45; }
+    .row .rmeta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+    .row .tag { display: inline-block; font-family: var(--mono); font-size: 9.5px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted); margin-right: 5px; }
+    .tag.coral { color: var(--accent); border-color: rgba(242,103,75,.4); }
+    .tag.cyan  { color: var(--cyan);   border-color: rgba(95,184,196,.4); }
+    .tag.gold  { color: var(--gold);   border-color: rgba(224,164,92,.4); }
+
+    /* ── tasks ────────────────────────────────────────────────────────────── */
+    .task { display: flex; align-items: flex-start; gap: 10px; padding: 8px 2px; border-bottom: 1px solid rgba(35,75,79,.5); }
+    .task:last-child { border-bottom: none; }
+    .task input { margin-top: 2px; accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+    .task .tt { font-size: 13px; color: var(--ink); line-height: 1.45; }
+    .task.done .tt { color: var(--faint); text-decoration: line-through; }
+    .task .tp { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; flex: none; }
+
+    /* ── deep-research job ────────────────────────────────────────────────── */
+    .job { font-size: 13px; }
+    .job .jt { color: var(--ink); margin-bottom: 10px; line-height: 1.5; }
+    .bar { height: 7px; border-radius: 4px; background: var(--field); border: 1px solid var(--line); overflow: hidden; }
+    .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--accent)); }
+    .jstat { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 7px; }
+    .steps { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .stp { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .stp .m { flex: none; width: 14px; text-align: center; }
+    .stp.done .m { color: var(--ok); } .stp.now .m { color: var(--cyan); } .stp.wait .m { color: var(--faint); }
+    .stp.wait { color: var(--faint); }
+
+    /* ── capture ──────────────────────────────────────────────────────────── */
+    .capture textarea { height: 70px; }
+    .capture .caprow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .capture .caprow .dest { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+    /* ── stat strip ───────────────────────────────────────────────────────── */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .stat { text-align: left; }
+    .stat .n { font-family: var(--mono); font-size: 24px; color: var(--ink); letter-spacing: -.02em; }
+    .stat .n .u { font-size: 12px; color: var(--faint); margin-left: 3px; }
+    .stat .l { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-top: 2px; }
+    .stat .d { font-size: 11px; margin-top: 4px; }
+    .stat .d.up { color: var(--ok); } .stat .d.flat { color: var(--muted); }
+
+    /* placeholder tile shown by the "add widget" affordance */
+    .addtile {
+      grid-column: span 4;
+      border: 1px dashed var(--inputbd); border-radius: 12px;
+      background: none; color: var(--muted);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px; min-height: 120px; cursor: pointer; font-size: 13px;
+    }
+    .addtile:hover { border-color: var(--accent); color: var(--ink); }
+    .addtile .plus { font-size: 22px; color: var(--faint); }
+
+    /* ── roadmap doc view ─────────────────────────────────────────────────── */
+    .doc { max-width: 900px; }
+    .doc .lede { font-size: 15px; color: var(--ink); line-height: 1.7; max-width: 70ch; margin: 4px 0 8px; }
+    .doc h2 { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin: 30px 0 12px; }
+    .doc h2:first-of-type { margin-top: 6px; }
+    .doc p { color: var(--muted); font-size: 13.5px; line-height: 1.7; max-width: 72ch; }
+    .doc p b, .doc li b { color: var(--ink); }
+    .doc code { font-size: .86em; }
+    .doc ul { margin: 8px 0; padding-left: 20px; }
+    .doc li { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 5px 0; }
+
+    .phases { display: flex; flex-direction: column; gap: 12px; }
+    .phase { background: var(--field); border: 1px solid var(--line); border-radius: 10px; border-left: 3px solid var(--cyan); padding: 14px 16px; }
+    .phase.now  { border-left-color: var(--accent); }
+    .phase.next { border-left-color: var(--gold); }
+    .phase .ph { display: flex; align-items: baseline; gap: 10px; }
+    .phase .pn { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+    .phase .pstat { margin-left: auto; font-family: var(--mono); font-size: 10px; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
+    .phase.now .pstat { color: var(--accent); border-color: rgba(242,103,75,.4); }
+    .phase h3 { font-size: 14.5px; margin: 3px 0 6px; letter-spacing: -.01em; }
+    .phase p { font-size: 12.5px; margin: 0 0 6px; max-width: none; }
+
+    .cards2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card { background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+    .card.dec { border-left: 3px solid var(--accent); }
+    .card.prin { border-left: 3px solid var(--cyan); }
+    .card .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+    .card h3 { font-size: 13.5px; margin: 5px 0 6px; letter-spacing: -.01em; }
+    .card p { font-size: 12.5px; margin: 0; max-width: none; }
+    .card .rec { display: block; margin-top: 8px; font-size: 12px; color: var(--ink); }
+    .card .rec b { color: var(--accent); }
+
+    .stackrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+    .chip { font-family: var(--mono); font-size: 11px; padding: 5px 10px; border-radius: 7px; background: var(--field); border: 1px solid var(--line); color: var(--muted); }
+    .chip b { color: var(--cyan); font-weight: 500; }
+
+    .tablewrap { overflow-x: auto; margin: 10px 0; }
+    table.doc-t { font-size: 12.5px; }
+    table.doc-t th, table.doc-t td { text-align: left; vertical-align: top; }
+    table.doc-t td:first-child { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+
+    /* ── responsive: collapse toward mobile (desktop was the base) ─────────── */
+    @media (max-width: 1080px) {
+      .app { grid-template-columns: 200px 1fr; }
+      .c4,.c5,.c6,.c7,.c8 { grid-column: span 6; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 820px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar {
+        position: static; height: auto; flex-direction: row; flex-wrap: wrap;
+        align-items: center; gap: 14px; border-right: none; border-bottom: 1px solid var(--line);
+      }
+      .sidebar .navgroup { flex-direction: row; flex-wrap: wrap; }
+      .sidebar .navgroup .glabel { display: none; }
+      .svcs { margin: 0 0 0 auto; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+      .svc .meta { display: none; }
+      .wgrid { grid-template-columns: repeat(6, 1fr); }
+      .topbar { padding: 12px 16px; }
+      .viewwrap { padding: 16px; }
+      .cards2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .wgrid { grid-template-columns: 1fr; }
+      .c4,.c5,.c6,.c7,.c8,.c12 { grid-column: 1 / -1; }
+      .addtile { grid-column: 1 / -1; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .tabs .tab { padding: 6px 9px; }
+      .topbar h1 { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
-  <main class="wrap home">
-    <p class="eyebrow">beachbio.io · dashboard</p>
-    <h1>Coming soon</h1>
-    <p class="sub" style="margin:0">This page is under construction.</p>
-    <a class="back" href="/">← home</a>
-  </main>
+  <div id="app"></div>
+
+  <script type="module">
+    import { render } from 'preact';
+    import { useState, useEffect, useRef } from 'preact/hooks';
+    import { html } from 'htm/preact';
+
+    /* ========================================================================
+       BeachBio research dashboard — PLACEHOLDER
+       ------------------------------------------------------------------------
+       Everything below is dummy data + fake behaviour to show the *shape* of
+       the thing: a modular widget grid + a chat surface + an embedded roadmap.
+       No network calls, no secrets. Look-and-feel is deliberately close to the
+       existing design system so Claude Design has a real starting point.
+       ==================================================================== */
+
+    /* ── tiny shared "widget" chrome ──────────────────────────────────────── */
+    const Widget = ({ title, icon, span = 'c6', actions, children }) => html`
+      <section class=${'widget ' + span}>
+        <div class="whead">
+          <span class="wic">${icon}</span>
+          <span class="wt">${title}</span>
+          <span class="wactions">${actions}</span>
+        </div>
+        <div class="wbody">${children}</div>
+      </section>
+    `;
+
+    /* ── 1. Chat (OpenRouter) — the research core ─────────────────────────── */
+    const SEED = [
+      { who: 'you',   text: 'Which native yeast precursor competes hardest with a heterologous carotenoid pathway for FPP?' },
+      { who: 'model', text: 'Ergosterol biosynthesis is the dominant sink — squalene synthase (ERG9) pulls FPP hard. Common levers: knock ERG9 down under a repressible promoter, or push flux with a truncated HMG1. Want the trade-off table?' },
+    ];
+    const CANNED = "Good question. The usual first move is dynamic control of ERG9 rather than a full knockout — you keep enough sterol for viability while freeing FPP for the carotenoid branch. I can pull the primary literature via localdeepresearch and drop a summary into the knowledge base if useful.";
+
+    function ChatWidget() {
+      const [msgs, setMsgs] = useState(SEED);
+      const [draft, setDraft] = useState('');
+      const [streaming, setStreaming] = useState(false);
+      const logRef = useRef(null);
+
+      useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [msgs, streaming]);
+
+      const send = (e) => {
+        e.preventDefault();
+        const q = draft.trim();
+        if (!q || streaming) return;
+        setMsgs(m => [...m, { who: 'you', text: q }]);
+        setDraft('');
+        setStreaming(true);
+        // fake token streaming so you can feel how state updates flow
+        let i = 0;
+        setMsgs(m => [...m, { who: 'model', text: '' }]);
+        const iv = setInterval(() => {
+          i += 2;
+          setMsgs(m => {
+            const copy = m.slice();
+            copy[copy.length - 1] = { who: 'model', text: CANNED.split(' ').slice(0, i).join(' ') };
+            return copy;
+          });
+          if (i >= CANNED.split(' ').length) { clearInterval(iv); setStreaming(false); }
+        }, 60);
+      };
+
+      return html`
+        <${Widget} title="Assistant · OpenRouter" icon="◎" span="c7"
+          actions=${html`<button>Export ↧</button><button>New</button>`}>
+          <div class="modelrow">
+            <select>
+              <option>anthropic/claude — sonnet</option>
+              <option>openai/gpt — reasoning</option>
+              <option>fusion · 3-model vote</option>
+            </select>
+            <span class="rmeta" style="font-family:var(--mono);font-size:10.5px;color:var(--faint)">context: knowledge-base RAG on</span>
+          </div>
+          <div class="chatlog" ref=${logRef}>
+            ${msgs.map((m, idx) => html`
+              <div key=${idx} class=${'msg ' + (m.who === 'you' ? 'user' : 'bot')}>
+                <span class="who">${m.who === 'you' ? 'You' : 'Assistant'}</span>
+                ${m.text}${streaming && idx === msgs.length - 1 ? html`<span class="caret">&nbsp;</span>` : ''}
+              </div>
+            `)}
+          </div>
+          <form class="chatform" onSubmit=${send}>
+            <input type="text" placeholder="Ask something, or /research a topic…"
+              value=${draft} onInput=${e => setDraft(e.target.value)} />
+            <button class="primary" type="submit">Send</button>
+          </form>
+        <//>
+      `;
+    }
+
+    /* ── 2. Deep research job (localdeepresearch via tunnel) ──────────────── */
+    function DeepResearchWidget() {
+      const [pct, setPct] = useState(63);
+      useEffect(() => {
+        const iv = setInterval(() => setPct(p => (p >= 96 ? 63 : p + 1)), 900);
+        return () => clearInterval(iv);
+      }, []);
+      return html`
+        <${Widget} title="Deep Research · Unraid" icon="⚙" span="c5"
+          actions=${html`<button>Queue</button>`}>
+          <div class="job">
+            <div class="jt">Heterologous carotenoid pathways in <i>Yarrowia lipolytica</i> — precursor competition & dynamic control</div>
+            <div class="bar"><i style=${'width:' + pct + '%'}></i></div>
+            <div class="jstat"><span>running · localdeepresearch</span><span>${pct}%</span></div>
+            <div class="steps">
+              <div class="stp done"><span class="m">✓</span> gathered 41 sources</div>
+              <div class="stp done"><span class="m">✓</span> deduped & ranked</div>
+              <div class="stp now"><span class="m">▸</span> synthesising sections</div>
+              <div class="stp wait"><span class="m">○</span> write to knowledge base</div>
+            </div>
+          </div>
+        <//>
+      `;
+    }
+
+    /* ── 3. Knowledge base (recent wiki entries) ──────────────────────────── */
+    const KB = [
+      { k: 'note',  t: 'MVA pathway flux balance — carotenoid draw', meta: 'updated 2h ago', tag: ['flux', 'cyan'] },
+      { k: 'chat',  t: 'ERG9 dynamic knock-down strategies (from chat)', meta: 'agent-linked · 6 backlinks', tag: ['synthesised', 'coral'] },
+      { k: 'note',  t: 'BSF larvae lipid profile — batch 12', meta: 'updated yesterday', tag: ['bsf', 'gold'] },
+      { k: 'ref',   t: 'HPLC method — tocopherols v3', meta: 'linked from 2 tools', tag: ['method', 'cyan'] },
+      { k: 'note',  t: 'Astaxanthin esterification — reaction notes', meta: 'updated 3d ago', tag: ['chem', 'gold'] },
+    ];
+    const KnowledgeWidget = () => html`
+      <${Widget} title="Knowledge Base" icon="❑" span="c7"
+        actions=${html`<button>Open wiki ↗</button>`}>
+        <div class="list">
+          ${KB.map((r, i) => html`
+            <div class="row" key=${i}>
+              <span class="rk">${r.k}</span>
+              <div>
+                <div class="rt">${r.t}</div>
+                <div class="rmeta"><span class=${'tag ' + r.tag[1]}>${r.tag[0]}</span>${r.meta}</div>
+              </div>
+            </div>
+          `)}
+        </div>
+      <//>
+    `;
+
+    /* ── 4. Service status ────────────────────────────────────────────────── */
+    const StatusWidget = () => html`
+      <${Widget} title="Services" icon="◈" span="c5">
+        <div class="stats" style="grid-template-columns:1fr 1fr">
+          ${[
+            ['OpenRouter', 'ok', '142ms', 'reachable'],
+            ['Unraid tunnel', 'ok', '18ms', 'localdeepresearch up'],
+            ['R2 store', 'ok', '—', '318 docs'],
+            ['Vectorize', 'idle', '—', 'not provisioned'],
+          ].map(([n, s, lat, d], i) => html`
+            <div class="stat" key=${i}>
+              <div class="l"><span class=${'led ' + s} style="display:inline-block;margin-right:6px"></span>${n}</div>
+              <div class="n" style="font-size:16px;margin-top:6px">${lat}</div>
+              <div class=${'d ' + (s === 'ok' ? 'up' : 'flat')}>${d}</div>
+            </div>
+          `)}
+        </div>
+      <//>
+    `;
+
+    /* ── 5. Literature / news feed ────────────────────────────────────────── */
+    const FEED_POOL = [
+      { src: 'bioRxiv',  t: 'Modular optimisation of the β-carotene pathway raises titre 2.4× in oleaginous yeast' },
+      { src: 'PubMed',   t: 'Dynamic regulation of ERG9 balances growth and terpenoid production' },
+      { src: 'bioRxiv',  t: 'CRISPRi library screen maps FPP competition nodes across 96 strains' },
+      { src: 'Nat.Comm', t: 'Compartmentalising carotenogenesis to the yeast peroxisome' },
+      { src: 'PubMed',   t: 'Black soldier fly lipidomics under varied feedstock nitrogen' },
+      { src: 'bioRxiv',  t: 'Cell-free prototyping of the mevalonate pathway for rapid tuning' },
+    ];
+    function FeedWidget() {
+      const [items, setItems] = useState(FEED_POOL.slice(0, 4));
+      const shuffle = () => setItems([...FEED_POOL].sort(() => Math.random() - 0.5).slice(0, 4));
+      return html`
+        <${Widget} title="Literature Feed" icon="⌸" span="c6"
+          actions=${html`<button onClick=${shuffle}>Refresh</button>`}>
+          <div class="list">
+            ${items.map((r, i) => html`
+              <div class="row" key=${r.t + i}>
+                <span class="rk">${r.src}</span>
+                <div><div class="rt">${r.t}</div></div>
+              </div>
+            `)}
+          </div>
+        <//>
+      `;
+    }
+
+    /* ── 6. Tasks / to-do ─────────────────────────────────────────────────── */
+    function TasksWidget() {
+      const [tasks, setTasks] = useState([
+        { t: 'Review localdeepresearch output on FPP competition', p: 'today', done: false },
+        { t: 'Tag last week’s chat exports for the wiki agent', p: 'today', done: false },
+        { t: 'Draft SOP: saponification timing', p: 'wed', done: true },
+        { t: 'Wire OpenRouter proxy secret in Worker', p: 'this wk', done: false },
+      ]);
+      const toggle = (i) => setTasks(ts => ts.map((t, j) => j === i ? { ...t, done: !t.done } : t));
+      return html`
+        <${Widget} title="To-do" icon="✓" span="c6"
+          actions=${html`<button>Add</button>`}>
+          ${tasks.map((t, i) => html`
+            <label class=${'task' + (t.done ? ' done' : '')} key=${i}>
+              <input type="checkbox" checked=${t.done} onChange=${() => toggle(i)} />
+              <span class="tt">${t.t}</span>
+              <span class="tp">${t.p}</span>
+            </label>
+          `)}
+        <//>
+      `;
+    }
+
+    /* ── 7. Quick capture ─────────────────────────────────────────────────── */
+    const CaptureWidget = () => html`
+      <${Widget} title="Quick Capture" icon="✎" span="c12">
+        <div class="capture">
+          <textarea placeholder="Paste a finding, a link, a stray idea… routed to the inbox note in the knowledge base."></textarea>
+          <div class="caprow">
+            <span class="dest">→ knowledge-base / inbox.md</span>
+            <span style="flex:1"></span>
+            <button>Attach file</button>
+            <button class="primary">Capture</button>
+          </div>
+        </div>
+      <//>
+    `;
+
+    /* ── widget registry ──────────────────────────────────────────────────────
+       Adding a widget = adding an entry here (mirrors the GROUPS array in
+       /tools/nav.js). Order top→left, dense packing fills the rows. */
+    const WIDGETS = [ChatWidget, DeepResearchWidget, KnowledgeWidget, StatusWidget, FeedWidget, TasksWidget, CaptureWidget];
+
+    const DashboardView = () => html`
+      <div class="wgrid">
+        ${WIDGETS.map((W, i) => html`<${W} key=${i} />`)}
+        <button class="addtile" title="placeholder"><span class="plus">+</span>add widget</button>
+      </div>
+    `;
+
+    /* ── roadmap / rollout doc (embedded documentation) ───────────────────── */
+    const RoadmapView = () => html`
+      <div class="doc">
+        <p class="eyebrow">rollout plan</p>
+        <h1 style="font-size:24px">Research homepage — skeleton & rollout</h1>
+        <p class="lede">
+          Turning the placeholder dashboard into a <b>home base for molecular / metabolic engineering
+          research</b>: a chat surface over OpenRouter + a self-hosted deep-research service, whose
+          markdown outputs an agent folds into a browsable knowledge base — all wrapped in a modular
+          dashboard we can bolt widgets onto. The rule throughout: <b>as lightweight as the job needs,
+          no lighter.</b>
+        </p>
+
+        <h2>Why this shape</h2>
+        <p>
+          Our server's job is <b>orchestration, persistence, and secret-keeping</b> — not compute.
+          Models run at OpenRouter or on the Unraid box, so we never need a heavy backend. That is
+          exactly what Cloudflare Workers is best at, which means we <b>don't leave Cloudflare</b> —
+          we just stop running in assets-only mode and add a Worker script in front of the same
+          <code>./public</code> we already serve.
+        </p>
+        <ul>
+          <li><b>API proxy / secret keeper</b> — the OpenRouter key can't live in browser JS. A Worker holds it and streams responses back (SSE). This alone is the reason to add the Worker now.</li>
+          <li><b>Persistence</b> — <code>R2</code> for markdown/artifacts, <code>D1</code> for the index (titles, tags, backlinks), <code>Vectorize</code> later for RAG.</li>
+          <li><b>Reach to Unraid</b> — a Worker can't dial a private home service directly. A <b>Cloudflare Tunnel</b> exposes <code>localdeepresearch</code> over HTTPS behind the same Access policy.</li>
+          <li><b>Background agent</b> — <code>Cron</code> + <code>Queues</code> (or <code>Workflows</code>) turn saved outputs into linked wiki pages.</li>
+        </ul>
+
+        <h2>Front-end stack</h2>
+        <p>The site stays buildless. We add one tier for app-shaped pages and keep the rest barebones:</p>
+        <div class="stackrow">
+          <span class="chip"><b>vanilla</b> · landing, simple tools</span>
+          <span class="chip"><b>Alpine.js</b> · attribute sprinkles</span>
+          <span class="chip"><b>Preact + htm</b> · dashboard & chat (this page)</span>
+          <span class="chip">Access · auth (just you)</span>
+        </div>
+        <p>
+          This dashboard is Preact + htm loaded from a pinned CDN via an import map — real components
+          and shared state, still a single <code>&lt;script type="module"&gt;</code> with no toolchain.
+          If we ever want zero third-party requests, we vendor Preact under <code>/vendor/</code> and
+          keep the exact same code.
+        </p>
+
+        <h2>Phases</h2>
+        <div class="phases">
+          <div class="phase now">
+            <div class="ph"><span class="pn">Phase 0</span><h3>Flip the switch</h3><span class="pstat">next up</span></div>
+            <p>Add a <code>main</code> Worker to <code>wrangler.jsonc</code>; it still serves <code>./public</code> but now owns an <code>/api/*</code> router. Small change, unlocks everything below.</p>
+          </div>
+          <div class="phase next">
+            <div class="ph"><span class="pn">Phase 1</span><h3>Chat + capture</h3><span class="pstat">planned</span></div>
+            <p>Worker proxies OpenRouter (streaming) and writes outputs to R2 with a D1 index. Reach <code>localdeepresearch</code> through the tunnel. This dashboard's chat + capture widgets go live.</p>
+          </div>
+          <div class="phase">
+            <div class="ph"><span class="pn">Phase 2</span><h3>Knowledge base</h3><span class="pstat">planned</span></div>
+            <p>A Cron/Queue agent turns saved markdown into linked wiki pages — backlinks, tags, dedupe — served from this homepage.</p>
+          </div>
+          <div class="phase">
+            <div class="ph"><span class="pn">Phase 3</span><h3>RAG</h3><span class="pstat">later</span></div>
+            <p>Vectorize + embeddings once there's enough content to justify it. Chat answers cite the knowledge base.</p>
+          </div>
+        </div>
+
+        <h2>Open decisions</h2>
+        <div class="cards2">
+          <div class="card dec">
+            <div class="k">decision · A vs B</div>
+            <h3>Where does the knowledge base live?</h3>
+            <p><b>A —</b> Cloudflare-native (R2 + D1 + Vectorize); Obsidian is a synced secondary view. <b>B —</b> the Obsidian vault lives on Unraid; Cloudflare is the front door via tunnel.</p>
+            <span class="rec">Lean: <b>start A</b>, keep B in reserve — one managed platform, no home-uptime dependency.</span>
+          </div>
+          <div class="card dec">
+            <div class="k">decision · naming</div>
+            <h3>Rename "dashboard"?</h3>
+            <p>"Dashboard" undersells it. Candidates: <b>Lab</b>, <b>Bench</b>, <b>Studio</b>, <b>Console</b>. Whatever we pick sets the route and the crumb.</p>
+            <span class="rec">Lean: <b>/lab</b> — short, on-theme, ages well.</span>
+          </div>
+          <div class="card dec">
+            <div class="k">decision · RAG store</div>
+            <h3>Vectorize vs self-hosted</h3>
+            <p>Cloudflare Vectorize (zero-ops, in-platform) vs Qdrant/Chroma on Unraid (own the data). Embeddings are an API call either way.</p>
+            <span class="rec">Lean: <b>Vectorize</b> unless we want the vectors local.</span>
+          </div>
+          <div class="card dec">
+            <div class="k">decision · look</div>
+            <h3>Visual pass with Claude Design</h3>
+            <p>This page reuses the existing tokens as a starting point. Density, widget chrome, and the chat surface are the obvious things to refine.</p>
+            <span class="rec">Lean: <b>keep the dark-teal system</b>, refine spacing & hierarchy.</span>
+          </div>
+        </div>
+
+        <h2>Staying in spec but lightweight</h2>
+        <div class="cards2">
+          <div class="card prin"><div class="k">principle</div><h3>One platform until it hurts</h3><p>Everything on Cloudflare + one tunnel to Unraid. Only step outside for a specific project that hits a real wall — and only that project.</p></div>
+          <div class="card prin"><div class="k">principle</div><h3>Buildless by default</h3><p>Import maps + pinned CDNs, no bundler. A page should be openable and readable as a single file.</p></div>
+          <div class="card prin"><div class="k">principle</div><h3>Modular, registry-driven</h3><p>Widgets and tools are entries in a list (this page's <code>WIDGETS</code>, the tools' <code>GROUPS</code>). Adding one is data, not plumbing.</p></div>
+          <div class="card prin"><div class="k">principle</div><h3>Right tool per page</h3><p>Vanilla → Alpine → Preact, in that order of reach. Don't pull in the heavy tier for a page that doesn't need it.</p></div>
+        </div>
+
+        <h2>Immediate next steps</h2>
+        <ul>
+          <li>Sketch the <b>Phase 0 Worker skeleton</b> (config + <code>/api</code> router + OpenRouter streaming proxy).</li>
+          <li>Pick <b>A vs B</b> for the knowledge store and the <b>rename</b> — both gate routing.</li>
+          <li>Stand up the <b>Cloudflare Tunnel</b> to <code>localdeepresearch</code> behind Access.</li>
+          <li>Take this page to <b>Claude Design</b> for the visual pass.</li>
+        </ul>
+
+        <p class="hint" style="margin-top:24px">Placeholder — dummy data, no live services. Generated as a skeleton for the research-homepage rollout.</p>
+      </div>
+    `;
+
+    /* ── app shell ────────────────────────────────────────────────────────── */
+    function App() {
+      const [view, setView] = useState('dashboard');
+      const [clock, setClock] = useState('');
+      useEffect(() => {
+        const tick = () => setClock(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        tick(); const iv = setInterval(tick, 1000 * 30); return () => clearInterval(iv);
+      }, []);
+
+      const nav = (id, ic, label, badge) => html`
+        <button class=${'navitem' + (view === id ? ' active' : '')} onClick=${() => setView(id)}>
+          <span class="ic">${ic}</span>${label}${badge ? html`<span class="badge">${badge}</span>` : ''}
+        </button>
+      `;
+
+      return html`
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand"><span class="dot"></span><b>Sam Beach</b><span class="env">research</span></div>
+
+            <div class="navgroup">
+              <div class="glabel">workspace</div>
+              ${nav('dashboard', '▦', 'Dashboard')}
+              ${nav('roadmap', '◇', 'Roadmap', 'plan')}
+            </div>
+            <div class="navgroup">
+              <div class="glabel">research</div>
+              ${nav('dashboard', '◎', 'Assistant')}
+              ${nav('dashboard', '❑', 'Knowledge base')}
+              ${nav('dashboard', '⚙', 'Deep research')}
+              ${nav('dashboard', '⌸', 'Literature')}
+            </div>
+            <div class="navgroup">
+              <div class="glabel">shortcuts</div>
+              <a class="navitem" href="/tools/"><span class="ic">⛭</span>Tools ↗</a>
+              <a class="navitem" href="/"><span class="ic">←</span>Home</a>
+            </div>
+
+            <div class="svcs">
+              <div class="svc"><span class="led ok"></span>OpenRouter<span class="meta">142ms</span></div>
+              <div class="svc"><span class="led ok"></span>Unraid tunnel<span class="meta">18ms</span></div>
+              <div class="svc"><span class="led warn"></span>Vectorize<span class="meta">idle</span></div>
+              <div class="svc"><span class="led idle"></span>R2 sync<span class="meta">manual</span></div>
+            </div>
+          </aside>
+
+          <div class="main">
+            <header class="topbar">
+              <h1>${view === 'roadmap' ? 'Roadmap' : 'Research'}</h1>
+              <span class="crumb">/ ${view === 'roadmap' ? 'rollout plan' : 'dashboard'}</span>
+              <div class="tabs">
+                <button class=${'tab' + (view === 'dashboard' ? ' active' : '')} onClick=${() => setView('dashboard')}>Dashboard</button>
+                <button class=${'tab' + (view === 'roadmap' ? ' active' : '')} onClick=${() => setView('roadmap')}>Roadmap</button>
+              </div>
+              <span class="spacer"></span>
+              <span class="clock">${clock}</span>
+            </header>
+            <div class="viewwrap">
+              ${view === 'roadmap' ? html`<${RoadmapView} />` : html`<${DashboardView} />`}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
 </body>
 </html>
