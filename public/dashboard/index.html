@@ -523,7 +523,15 @@
     /* ── roadmap / rollout doc (embedded documentation) ───────────────────── */
     const RoadmapView = () => html`
       <div class="doc">
-        <p class="eyebrow">rollout plan</p>
+        <div style="border:1px solid var(--gold);border-left:3px solid var(--gold);background:color-mix(in srgb, var(--gold) 8%, transparent);border-radius:10px;padding:13px 16px;margin-bottom:20px;font-size:13px;line-height:1.6;color:var(--muted)">
+          <b style="color:var(--ink)">Superseded plan.</b> The Cloudflare-native rollout below (Workers +
+          R2/D1/Vectorize, unRAID tunnel, human-PR-gated wiki) has been replaced. Current plan:
+          <a href="/tools/projects/autonomous-wiki/" style="color:var(--accent)">Autonomous wiki — architecture</a>
+          — immutable markdown sources feeding a hands-off Hermes agent that maintains a
+          Postgres&nbsp;+&nbsp;pgvector wiki on Supabase. This dashboard is a look-and-feel prototype and
+          is itself due for a rebuild; the phases below are kept for reference only.
+        </div>
+        <p class="eyebrow">rollout plan · superseded</p>
         <h1 style="font-size:24px">Research homepage — skeleton & rollout</h1>
         <p class="lede">
           Turning the placeholder dashboard into a <b>home base for molecular / metabolic engineering
