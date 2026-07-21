@@ -88,6 +88,20 @@
   .backlink { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; margin-bottom: 16px; }
   .backlink:hover { color: var(--ink); }
   .meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+
+  /* addendum */
+  .addendum { margin-top: 30px; border-top: 1px dashed var(--line); padding-top: 22px; }
+  .addendum .eyebrow { color: var(--gold); }
+  .pane-mock { display: grid; grid-template-columns: 1.4fr 1fr; grid-template-rows: auto auto; gap: 6px; margin-top: 6px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+  @media (max-width: 620px) { .pane-mock { grid-template-columns: 1fr; } }
+  .pane-mock .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; min-height: 54px; }
+  .pane-mock .pane .k { font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  .pane-mock .pane .t { font-family: var(--mono); font-size: 12px; color: var(--ink); margin-top: 3px; }
+  .pane-mock .pane.a { border-left: 3px solid var(--rose); }
+  .pane-mock .pane.b { border-left: 3px solid var(--cyan); }
+  .pane-mock .pane.c { border-left: 3px solid var(--gold); }
+  .pane-mock .pane.d { border-left: 3px solid var(--accent); grid-column: 1 / -1; }
+  .pane-mock .pane .t small { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -329,6 +343,59 @@
     <br><br>
     <b>Watch it before you trust it.</b> Run the agent in dry-run (phase 3) long enough to see its
     failure modes. Auto-apply is a decision you make <em>after</em> the tripwires have earned it.
+  </div>
+
+  <!-- ── addendum: tiling dashboard ───────────────────────────────────────── -->
+  <div class="addendum">
+    <p class="eyebrow">addendum · front-end shape · 2026-07-21</p>
+    <h2 style="margin-top:6px">The front end as a tiling window manager</h2>
+    <p class="lede" style="margin-top:0">
+      Open question for the dashboard that reads this system: what if it behaves like a
+      <b>tiling window manager</b> (i3 / yabai style) rather than a fixed page? Split the screen into
+      panes, each showing one live view of the architecture above, arranged and resized on the fly.
+      It fits this design unusually well — the pieces here are naturally several things you want to
+      watch <em>at once</em>, side by side.
+    </p>
+
+    <div class="pane-mock" aria-hidden="true">
+      <div class="pane a"><div class="k">tier 1 · source</div><div class="t">sources/ feed <small>· latest captures</small></div></div>
+      <div class="pane b"><div class="k">tier 2 · wiki</div><div class="t">page: Carotenoid <small>· + backlinks</small></div></div>
+      <div class="pane c"><div class="k">agent</div><div class="t">Hermes chat / research</div></div>
+      <div class="pane d"><div class="k">audit · realtime</div><div class="t">agent_runs <small>· run 47 touched 5 pages…</small></div></div>
+    </div>
+
+    <p class="lede">
+      The model is small: a pane is either a leaf (one view) or a split with two children and a ratio
+      — a <b>BSP tree</b>, the same structure a real tiling WM uses. Resize adjusts a ratio, splitting
+      a pane replaces a leaf with a split, closing collapses the sibling up. It's plain JSON state and
+      keyboard-driven, and (this is the point) it is <b>100% client-side</b> — no SSR, no server
+      runtime. So <b>Next.js buys nothing here</b>; it would only fight the current static-on-Cloudflare
+      model. Two paths that don't:
+    </p>
+    <div class="tablewrap">
+      <table class="doc">
+        <thead><tr><th>Path</th><th>What</th><th>Fit</th></tr></thead>
+        <tbody>
+          <tr><td>Vanilla, single file</td><td>BSP tree + flexbox splits + drag-resize gutters + a keymap, a few hundred lines, no deps</td><td>Matches the house style (self-contained <code>index.html</code>, links <code>/style.css</code>). Drops into <code>/dashboard/</code> with no build step.</td></tr>
+          <tr><td>react-mosaic</td><td>A React library that <em>is</em> a tiling BSP window manager; ships as one static Vite bundle</td><td>Faster to something polished; keeps static hosting intact (one build artifact). The on-target pick if the pane logic gets rich.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede">
+      The real design question isn't <em>can it tile</em> — it's <b>what an addressable pane is</b>. A WM
+      tiles opaque OS windows; here each pane is a view of a first-class object in this system: a
+      <span style="color:var(--rose)">sources</span> feed, a <span style="color:var(--cyan)">wiki page</span>
+      + its backlinks, a <span style="color:var(--gold)">Hermes</span> chat/research session, the
+      <code>agent_runs</code> audit log. That last one is why this pairs naturally with
+      <b>Supabase Realtime</b> — a pane can watch runs land as they happen, which is exactly the window
+      you want into a hands-off system. Each pane resolves to a slug/route, so a whole layout is
+      shareable and restorable as URL state.
+    </p>
+    <p class="hint" style="margin-top:10px">
+      Verdict: not a stretch — a genuinely good match for a dashboard whose job is to watch several
+      live tiers at once. Keep it client-side; reach for react-mosaic only if a hand-rolled tree gets
+      unwieldy. A pane contract (slug → view) is the thing to nail down first, not the tiling.
+    </p>
   </div>
 
   <p class="hint">A design note, not a build. Supersedes the earlier
