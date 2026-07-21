@@ -36,7 +36,8 @@
     {
       heading: "projects",
       tools: [
-        { label: "Personal AI — architecture", path: "/tools/projects/personal-ai/" },
+        { label: "Autonomous wiki — architecture", path: "/tools/projects/autonomous-wiki/" },
+        { label: "Personal AI — architecture (superseded)", path: "/tools/projects/personal-ai/" },
       ],
     },
     {

@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Autonomous wiki — architecture — BeachBio</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .lede { font-size: 15px; color: var(--ink); max-width: 68ch; line-height: 1.7; margin: 6px 0 8px; }
+  .lede b { color: var(--ink); }
+
+  /* principle cards */
+  .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 4px; }
+  @media (max-width: 760px) { .principles { grid-template-columns: 1fr; } }
+  .principle { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; border-left: 3px solid var(--cyan); }
+  .principle.gate { border-left-color: var(--accent); }
+  .principle .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .principle h3 { font-size: 14px; margin: 4px 0 5px; letter-spacing: -.01em; }
+  .principle p { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+
+  /* diagram */
+  .diagram { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
+  .plane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; }
+  .plane > .plabel { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .plane > .plabel .side { color: var(--muted); }
+  .nodes { display: flex; flex-wrap: wrap; gap: 10px; }
+  .node { flex: 1 1 200px; min-width: 180px; background: var(--field); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 12px; }
+  .node .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  .node .t { font-family: var(--mono); font-size: 13px; color: var(--ink); margin: 3px 0 4px; font-weight: 500; }
+  .node .d { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .node.client { border-left-color: var(--muted); }
+  .node.source { border-left-color: var(--rose); }
+  .node.agent  { border-left-color: var(--gold); }
+  .node.store  { border-left-color: var(--cyan); }
+  .node.gate   { border-left-color: var(--accent); }
+  .node.gate .t { color: var(--accent); }
+
+  .flowline { text-align: center; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: var(--muted); padding: 9px 0; }
+  .flowline b { color: var(--accent); font-weight: 500; }
+  .flowline .arrow { display: block; color: var(--line); font-size: 15px; line-height: 1; margin-top: 2px; }
+  .flowline.barrier { color: var(--rose); }
+  .flowline.barrier b { color: var(--rose); }
+
+  /* two-tier contrast block */
+  .tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+  @media (max-width: 760px) { .tiers { grid-template-columns: 1fr; } }
+  .tier { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 15px 16px; }
+  .tier.cold { border-top: 3px solid var(--rose); }
+  .tier.warm { border-top: 3px solid var(--cyan); }
+  .tier .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .tier h3 { font-size: 15px; margin: 5px 0 8px; letter-spacing: -.01em; }
+  .tier dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; }
+  .tier dt { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .tier dd { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .tier dd b { color: var(--ink); }
+
+  /* schema block */
+  .schema { background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-top: 6px; overflow-x: auto; }
+  .schema pre { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--ink); white-space: pre; }
+  .schema .c { color: var(--faint); }
+  .schema .t { color: var(--cyan); }
+  .schema .r { color: var(--rose); }
+
+  /* left-aligned prose tables */
+  .tablewrap { overflow-x: auto; margin-top: 10px; }
+  table.doc { font-size: 12.5px; }
+  table.doc th, table.doc td { text-align: left; vertical-align: top; }
+  table.doc td:first-child { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+  table.doc .route { font-family: var(--mono); font-size: 11px; }
+  table.doc .src { color: var(--rose); } table.doc .ag { color: var(--gold); } table.doc .wk { color: var(--cyan); }
+
+  /* phased sequence */
+  .phases { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .phase { display: grid; grid-template-columns: 38px 1fr; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; }
+  .phase .n { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .phase h3 { font-size: 13.5px; margin: 0 0 4px; }
+  .phase p { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+  .phase .win { display: inline-block; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--ok); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 20px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  .backlink { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; margin-bottom: 16px; }
+  .backlink:hover { color: var(--ink); }
+  .meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a href="/tools/" class="backlink">← tools</a>
+
+  <p class="eyebrow">personal infrastructure · design note · current plan</p>
+  <h1>Autonomous wiki — architecture</h1>
+  <p class="meta">immutable markdown sources · Hermes agent via OpenRouter · Postgres + pgvector wiki (Supabase)</p>
+
+  <p class="lede">
+    The site is a <b>front end for LLM conversations and deep research</b>. Every session's
+    markdown output lands in <b>cold storage as immutable truth</b> — write-once, never edited.
+    A <b>Hermes agent</b> (via OpenRouter) reads those sources on its own and folds them into a
+    <b>living wiki held in Postgres</b>: pages, backlinks, tags, embeddings. The wiki is
+    hands-off — the agent maintains it without you in the loop — and that's only safe because it
+    is a <b>rebuildable projection</b> of sources the agent can never touch.
+  </p>
+
+  <!-- ── the core idea ────────────────────────────────────────────────────── -->
+  <h2>Two tiers, one direction</h2>
+  <p class="lede" style="margin-top:0">
+    This is an <b>append-only source log feeding a derived read model</b> — the same shape as
+    event-sourcing / CQRS. The truth is the log of raw markdown; the wiki is a view over it.
+  </p>
+  <div class="tiers">
+    <div class="tier cold">
+      <div class="k">tier 1 · cold</div>
+      <h3>Sources — the record</h3>
+      <dl>
+        <dt>is</dt><dd>Raw markdown from every chat &amp; research run</dd>
+        <dt>write</dt><dd><b>Append-only.</b> Written once at capture, never mutated</dd>
+        <dt>agent</dt><dd><b>Read-only</b> — no write credential, enforced by role</dd>
+        <dt>role</dt><dd>System of record. The one thing that must not be lost</dd>
+        <dt>lives</dt><dd>Object storage (Supabase Storage / R2) or an append-only table</dd>
+      </dl>
+    </div>
+    <div class="tier warm">
+      <div class="k">tier 2 · living</div>
+      <h3>Wiki — the projection</h3>
+      <dl>
+        <dt>is</dt><dd>Curated pages, backlink graph, tags, embeddings</dd>
+        <dt>write</dt><dd><b>Mutable.</b> The agent rewrites it continuously</dd>
+        <dt>agent</dt><dd><b>Read / write</b> — this is the agent's workspace</dd>
+        <dt>role</dt><dd>Disposable. <b>Rebuildable from tier 1 at any time</b></dd>
+        <dt>lives</dt><dd>Postgres + pgvector (the relational + search engine)</dd>
+      </dl>
+    </div>
+  </div>
+
+  <!-- ── principles ───────────────────────────────────────────────────────── -->
+  <h2>Load-bearing decisions</h2>
+  <div class="principles">
+    <div class="principle gate">
+      <div class="k">the safety net</div>
+      <h3>Sources are immutable — enforced structurally, not by trust</h3>
+      <p>The agent holds a <b>read-only</b> credential to the source store. It cannot rewrite the
+        record even if it wanted to. Everything downstream is recoverable because this one thing
+        can't be corrupted.</p>
+    </div>
+    <div class="principle gate">
+      <div class="k">why it's safe</div>
+      <h3>The wiki is rebuildable, therefore disposable</h3>
+      <p>Because the wiki is <em>derived</em> from immutable sources, a rogue run can't cause
+        irreversible loss. Worst case you re-run the derivation. Test a full rebuild periodically so
+        this stays true, not just theoretically true.</p>
+    </div>
+    <div class="principle gate">
+      <div class="k">hands-off, not blind</div>
+      <h3>Auto-merge with history — not a human gate</h3>
+      <p>The old plan gated every edit on a PR <em>you</em> merge; hands-off drops the human, not
+        the audit trail. Every agent edit is a diffable revision (<code>page_revisions</code> or a
+        git commit) that auto-applies — you can audit and <code>revert</code> any run after the fact.</p>
+    </div>
+    <div class="principle gate">
+      <div class="k">machine gates</div>
+      <h3>Cheap tripwires stand in for the reviewer</h3>
+      <p>With no human per-edit, put automated checks between agent and wiki: reject a run that
+        deletes &gt;X% of content, guts a heavily-linked page, or leaves dangling links.
+        <b>Never hard-delete</b> — archive/supersede so nothing is truly gone.</p>
+    </div>
+    <div class="principle">
+      <div class="k">provenance</div>
+      <h3>Every claim links back to its source</h3>
+      <p>A <code>page_sources</code> join ties each wiki page to the immutable markdown it was built
+        from. "Why does it say this?" is always answerable, and corrections/rebuilds stay tractable
+        because the lineage is explicit.</p>
+    </div>
+    <div class="principle">
+      <div class="k">right store per job</div>
+      <h3>Postgres for the graph, blobs for the prose</h3>
+      <p>A wiki's value is its <em>connections</em> — backlinks, tags, search — which are relational,
+        so Postgres is the strong pick (with pgvector, RAG lives in the same DB). Cold markdown is
+        write-once blobs; that's not Postgres's job.</p>
+    </div>
+  </div>
+
+  <!-- ── system diagram ───────────────────────────────────────────────────── -->
+  <h2>System</h2>
+  <div class="diagram">
+
+    <div class="plane">
+      <div class="plabel">clients <span class="side">· anywhere</span></div>
+      <div class="nodes">
+        <div class="node client"><div class="k">browser</div><div class="t">Phone / laptop</div><div class="d">The site is the front end: chat, kick off research, browse the wiki.</div></div>
+        <div class="node client"><div class="k">frontend · beachbio.io</div><div class="t">Chat + research + wiki</div><div class="d">LLM conversations and deep research; their markdown is captured, the wiki is read.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline">every session's markdown output is captured<span class="arrow">↓</span></div>
+
+    <div class="plane">
+      <div class="plabel">tier 1 <span class="side">· cold storage</span></div>
+      <div class="nodes">
+        <div class="node source"><div class="k">append-only</div><div class="t">sources/</div><div class="d">Raw markdown, write-once. The immutable record. Agent has read-only access.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline barrier">agent <b>reads</b> sources — it can never write them<span class="arrow">↓</span></div>
+
+    <div class="plane">
+      <div class="plabel">the agent <span class="side">· scheduled, autonomous</span></div>
+      <div class="nodes">
+        <div class="node agent"><div class="k">curator · via OpenRouter</div><div class="t">Hermes</div><div class="d">On a schedule / on new sources: read → extract → dedupe → cross-link → write the wiki. Keyed server-side.</div></div>
+        <div class="node gate"><div class="k">between agent &amp; wiki</div><div class="t">Tripwires</div><div class="d">Reject destructive runs, forbid hard-delete, record the run in an audit log before it lands.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline">writes pages, links, tags, embeddings<span class="arrow">↓</span></div>
+
+    <div class="plane">
+      <div class="plabel">tier 2 <span class="side">· living wiki · Postgres</span></div>
+      <div class="nodes">
+        <div class="node store"><div class="k">relational + search</div><div class="t">pages · links · tags</div><div class="d">The knowledge base. Backlink graph + full-text; mutable, curated by the agent.</div></div>
+        <div class="node store"><div class="k">pgvector</div><div class="t">embeddings</div><div class="d">Semantic search / RAG in the same DB — no separate vector store to keep in sync.</div></div>
+      </div>
+    </div>
+
+    <div class="flowline"><span class="arrow">↑</span>rendered as browsable linked pages, back on the site</div>
+
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--muted)"></i> client</span>
+    <span><i style="background:var(--rose)"></i> source (immutable)</span>
+    <span><i style="background:var(--gold)"></i> agent (cloud, per-use)</span>
+    <span><i style="background:var(--cyan)"></i> wiki (Postgres)</span>
+    <span><i style="background:var(--accent)"></i> guardrail</span>
+  </div>
+
+  <!-- ── data model ───────────────────────────────────────────────────────── -->
+  <h2>Data model</h2>
+  <p class="lede" style="margin-top:0">Tier 1 is one append-only table (or a bucket). Everything else
+    is tier 2 — the agent's workspace, all rebuildable.</p>
+  <div class="schema">
+<pre><span class="c">-- tier 1: the record — append-only, agent is READ-ONLY</span>
+<span class="r">sources</span>        (id, created_at, kind, title, body_md, meta)
+
+<span class="c">-- tier 2: the living wiki — agent read/write, all rebuildable</span>
+<span class="t">pages</span>          (id, slug, title, body_md, embedding <span class="c">vector</span>, updated_at)
+<span class="t">page_revisions</span> (page_id, rev, body_md, changed_at, run_id)   <span class="c">-- history / revert</span>
+<span class="t">links</span>          (from_page, to_page)                          <span class="c">-- backlink graph</span>
+<span class="t">page_sources</span>   (page_id, source_id)                          <span class="c">-- provenance</span>
+<span class="t">agent_runs</span>     (id, started_at, sources_in[], pages_touched[], model, summary)</pre>
+  </div>
+  <p class="hint"><code>agent_runs</code> is your window into a hands-off system: "on run 47, Hermes
+    read 3 sources and touched 5 pages." That log is how you stay hands-off without being blind.</p>
+
+  <!-- ── flows ────────────────────────────────────────────────────────────── -->
+  <h2>What happens on a flow</h2>
+  <div class="tablewrap">
+    <table class="doc">
+      <thead><tr><th>Flow</th><th>Path</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Capture</td>
+          <td>Chat / research → <span class="route src">sources/</span> (append)</td>
+          <td>Any conversation or deep-research run writes its markdown to cold storage, IDed and timestamped. Never touched again.</td>
+        </tr>
+        <tr>
+          <td>Curate</td>
+          <td><span class="route ag">Hermes</span> reads new <span class="route src">sources</span> → tripwires → writes <span class="route wk">wiki</span> + <span class="route">agent_runs</span></td>
+          <td>Scheduled/triggered. Extracts entities, dedupes against existing pages, updates links + embeddings. Auto-applies as a revision; logged and revertable.</td>
+        </tr>
+        <tr>
+          <td>Read / ask</td>
+          <td>Site → <span class="route wk">wiki</span> (full-text + <span class="route wk">pgvector</span>) → cited answer</td>
+          <td>Browse linked pages, or ask a question answered over the knowledge base with citations back to the source markdown.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── platform ─────────────────────────────────────────────────────────── -->
+  <h2>Platform</h2>
+  <p class="lede" style="margin-top:0">
+    <b>Supabase is the working choice</b> — it bundles exactly what this needs in one place. The
+    architecture is portable, though: it's "a Postgres + an object store + a place to run the agent
+    loop," so nothing here is locked to a vendor.
+  </p>
+  <div class="tablewrap">
+    <table class="doc">
+      <thead><tr><th>Need</th><th>Supabase piece</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Wiki + RAG</td><td>Postgres + <code>pgvector</code></td><td>Pages, graph, full-text, and embeddings in one queryable database.</td></tr>
+        <tr><td>Cold storage</td><td>Storage (or an append-only table)</td><td>Write-once markdown blobs. Agent gets a read-only key.</td></tr>
+        <tr><td>Auth</td><td>Supabase Auth</td><td>The replacement for the Cloudflare Access OTP flow — the thing we wanted to change anyway.</td></tr>
+        <tr><td>OpenRouter proxy</td><td>Edge Function</td><td>Holds the key server-side, streams chat responses to the browser.</td></tr>
+        <tr><td>Agent loop</td><td>Edge Function on <code>pg_cron</code></td><td>Where the curator actually runs. No home server required.</td></tr>
+        <tr><td>Live updates</td><td>Realtime (optional)</td><td>The dashboard can watch the wiki change as runs land — useful for a hands-off system.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── build order ──────────────────────────────────────────────────────── -->
+  <h2>Build order</h2>
+  <div class="phases">
+    <div class="phase"><div class="n">1</div><div><h3>Capture to cold storage</h3><p>Wire the existing chat / research front end to append its markdown output to <code>sources</code>. No agent yet — just start accumulating the record.</p><span class="win">win → an immutable corpus building up from day one</span></div></div>
+    <div class="phase"><div class="n">2</div><div><h3>Wiki schema + manual render</h3><p>Stand up the Postgres tables and render <code>pages</code> as browsable linked pages on the site. Seed a few by hand to prove the read side.</p><span class="win">win → a real wiki you can read, before any automation</span></div></div>
+    <div class="phase"><div class="n">3</div><div><h3>The agent, on a short leash</h3><p>Hermes reads new sources and proposes wiki edits — dry-run first (writes to a diff/log, not the live wiki). Watch a few runs before letting it auto-apply.</p><span class="win">win → see how it behaves with zero risk</span></div></div>
+    <div class="phase"><div class="n">4</div><div><h3>Let it run</h3><p>Turn on auto-apply behind the tripwires + <code>agent_runs</code> log. Add pgvector/RAG so answers cite the base. Now it maintains itself.</p><span class="win">win → hands-off, auditable, revertable</span></div></div>
+  </div>
+
+  <!-- ── cautions ─────────────────────────────────────────────────────────── -->
+  <h2>Honest cautions</h2>
+  <div class="note">
+    <b>This is a project / experiment, and an ungated autonomous agent is genuinely risky.</b> The
+    whole design is built so the risk is <em>recoverable</em>, not absent: immutable sources +
+    rebuildable wiki + full history means the worst case is a re-run, never a loss.
+    <br><br>
+    <b>Entity resolution is the part that will actually bite.</b> Research on overlapping topics
+    produces overlapping facts; without a stable page identity (canonical slugs/entities) the agent
+    forks "Carotenoid" into three subtly different pages over time. Decide identity early.
+    <br><br>
+    <b>Hermes orchestrates; it isn't the researcher.</b> A small model is fine for extract / dedupe /
+    cross-link, and underwhelming at genuine deep research — keep the heavy reasoning on capable
+    OpenRouter models and the curation loop on the cheap one.
+    <br><br>
+    <b>Watch it before you trust it.</b> Run the agent in dry-run (phase 3) long enough to see its
+    failure modes. Auto-apply is a decision you make <em>after</em> the tripwires have earned it.
+  </div>
+
+  <p class="hint">A design note, not a build. Supersedes the earlier
+    <a href="/tools/projects/personal-ai/">hybrid personal-AI note</a> (unRAID-hosted, human-PR-gated).
+    Sequence subject to change once the first table is real and reality has opinions.</p>
+
+</div>
+
+<script src="/tools/nav.js"></script>
+</body>
+</html>

@@ -4,6 +4,13 @@ The site shares one visual language across the landing page, the dashboard, and
 the `/tools` section (small, self-contained, single-file HTML tools). This doc
 is the guide for keeping things consistent and for adding new tools.
 
+> **Redesign in progress.** The site's architecture is being reworked — see the
+> plan in [`public/tools/projects/autonomous-wiki/`](public/tools/projects/autonomous-wiki/index.html)
+> and the Direction section of [CLAUDE.md](CLAUDE.md). The **design tokens**
+> (colours, type, the dark-teal system) are being **kept and carried forward**;
+> the current dashboard layout and the Cloudflare-Access/unRAID plumbing are not.
+> Build new work against the tokens below, not the old page layouts.
+
 ## The two reference files
 
 | File | What it is |

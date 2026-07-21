@@ -5,6 +5,32 @@ Hosted on **Cloudflare Workers Static Assets** (NOT Pages). A public landing pag
 and a `/dashboard/` placeholder, plus a `/tools/` section gated behind Cloudflare
 Access.
 
+## Direction (current plan)
+
+The site is being **rethought**, not extended along the old roadmap. The canonical
+plan is documented in the design note at
+[`public/tools/projects/autonomous-wiki/`](public/tools/projects/autonomous-wiki/index.html):
+
+- The site becomes a **front end for LLM conversations and deep research**. Each
+  session's markdown output is captured to **cold storage as immutable truth**
+  (append-only, never edited).
+- A **Hermes agent (via OpenRouter)** autonomously reads those sources and maintains
+  a **living wiki in Postgres + pgvector** — pages, backlinks, tags, embeddings.
+  Hands-off: no human in the edit loop. Safe because the wiki is a *rebuildable*
+  projection of sources the agent can never write.
+- Guardrails replace the human PR gate: immutable sources (agent read-only),
+  auto-merge **with** full revision history + revert, cheap tripwires, never
+  hard-delete, per-claim provenance.
+- **Supabase** is the working platform choice (Postgres/pgvector + Storage + Auth +
+  Edge Functions + `pg_cron`), superseding the earlier Cloudflare-native +
+  unRAID-tunnel + Cloudflare-Access design. Auth is moving *off* Cloudflare Access.
+
+Superseded notes (kept for history, banners point to the current plan):
+`/tools/projects/personal-ai/` and the embedded roadmap in `/dashboard/`.
+
+Everything below describes the **current repo as it stands today** (static site on
+Cloudflare) — still accurate until the redesign is actually built.
+
 ## Layout
 
 ```
